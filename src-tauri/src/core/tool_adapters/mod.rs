@@ -12,7 +12,7 @@ pub enum ToolId {
     Amp,
     KimiCli,
     Augment,
-    Openclaw,
+    OpenClaw,
     Cline,
     CodeBuddy,
     CommandCode,
@@ -44,6 +44,7 @@ pub enum ToolId {
     Clawdbot,
     Droid,
     Windsurf,
+    Moltbot,
 }
 
 impl ToolId {
@@ -57,7 +58,7 @@ impl ToolId {
             ToolId::Amp => "amp",
             ToolId::KimiCli => "kimi_cli",
             ToolId::Augment => "augment",
-            ToolId::Openclaw => "openclaw",
+            ToolId::OpenClaw => "openclaw",
             ToolId::Cline => "cline",
             ToolId::CodeBuddy => "codebuddy",
             ToolId::CommandCode => "command_code",
@@ -89,6 +90,7 @@ impl ToolId {
             ToolId::Clawdbot => "clawdbot",
             ToolId::Droid => "droid",
             ToolId::Windsurf => "windsurf",
+            ToolId::Moltbot => "moltbot",
         }
     }
 }
@@ -169,11 +171,11 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
             relative_detect_dir: ".augment",
         },
         ToolAdapter {
-            id: ToolId::Openclaw,
+            id: ToolId::OpenClaw,
             display_name: "OpenClaw",
-            // add-skill global path: ~/.moltbot/skills/
-            relative_skills_dir: ".moltbot/skills",
-            relative_detect_dir: ".moltbot",
+            // add-skill global path: ~/.openclaw/skills/
+            relative_skills_dir: ".openclaw/skills",
+            relative_detect_dir: ".openclaw",
         },
         ToolAdapter {
             id: ToolId::Cline,
@@ -391,6 +393,13 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
             // add-skill global path: ~/.codeium/windsurf/skills/
             relative_skills_dir: ".codeium/windsurf/skills",
             relative_detect_dir: ".codeium/windsurf",
+        },
+        ToolAdapter {
+            id: ToolId::Moltbot,
+            display_name: "MoltBot",
+            // add-skill global path: ~/.moltbot/skills/
+            relative_skills_dir: ".moltbot/skills",
+            relative_detect_dir: ".moltbot",
         },
     ]
 }
