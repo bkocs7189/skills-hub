@@ -53,17 +53,28 @@ const ExplorePage = ({
 
   const isSearchActive = exploreFilter.trim().length >= 2
 
-  // Check if a skill is already installed by matching skill name (case-insensitive)
-  const installedSkillNames = useMemo(() => {
-    const names = new Set<string>()
+  // Check if a skill is already installed by matching name + source (case-insensitive)
+  const installedSkillKeys = useMemo(() => {
+    const keys = new Set<string>()
     for (const skill of managedSkills) {
-      names.add(skill.name.toLowerCase())
+      const source = (skill.source_ref ?? '')
+        .replace('https://github.com/', '')
+        .replace(/\.git$/, '')
+        .split('/tree/')[0]
+        .toLowerCase()
+      keys.add(`${skill.name.toLowerCase()}|${source}`)
     }
-    return names
+    return keys
   }, [managedSkills])
 
-  const isInstalled = (skillName: string) =>
-    installedSkillNames.has(skillName.toLowerCase())
+  const isInstalled = (skillName: string, source: string) => {
+    const normalizedSource = source
+      .replace('https://github.com/', '')
+      .replace(/\.git$/, '')
+      .split('/tree/')[0]
+      .toLowerCase()
+    return installedSkillKeys.has(`${skillName.toLowerCase()}|${normalizedSource}`)
+  }
 
   return (
     <div className="explore-page">
@@ -105,7 +116,7 @@ const ExplorePage = ({
             {filteredSkills.length > 0 ? (
               <div className="explore-grid">
                 {filteredSkills.map((skill) => {
-                  const installed = isInstalled(skill.name)
+                  const installed = isInstalled(skill.name, skill.source_url)
                   return (
                     <div key={skill.slug} className="explore-card">
                       <div className="explore-card-top">
@@ -162,7 +173,7 @@ const ExplorePage = ({
                 ) : deduplicatedResults.length > 0 ? (
                   <div className="explore-grid">
                     {deduplicatedResults.map((skill) => {
-                      const installed = isInstalled(skill.name)
+                      const installed = isInstalled(skill.name, skill.source_url)
                       return (
                         <div key={skill.source} className="explore-card">
                           <div className="explore-card-top">
