@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-20
+
+### Added
+- **In-app update check**: Check for updates directly within Settings, download and install without leaving the app ([#33](https://github.com/qufei1993/skills-hub/issues/33)).
+- **QoderWork tool adapter**: Support for QoderWork desktop AI agent (`~/.qoderwork/skills/`) ([#34](https://github.com/qufei1993/skills-hub/issues/34)).
+
+### Changed
+- **Settings promoted to full page**: Settings moved from a modal dialog to a dedicated page view, consistent with My Skills / Explore navigation pattern.
+- **Curated skills aggregation**: Explore page now sources skills from a curated list of 7 high-quality repositories.
+
+### Fixed
+- Language toggle briefly flashing "Installing Skills..." loading overlay on Explore page.
+
 ## [0.3.0] - 2026-03-15
 
 ### Added

@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-20
+
+### 新增
+- **应用内检查更新**：在设置页内直接检查新版本，支持下载安装，无需手动访问 GitHub Releases（[#33](https://github.com/qufei1993/skills-hub/issues/33)）。
+- **QoderWork 工具适配**：新增 QoderWork 桌面 AI 代理支持（`~/.qoderwork/skills/`）（[#34](https://github.com/qufei1993/skills-hub/issues/34)）。
+
+### 变更
+- **设置页面化**：设置从模态弹窗升级为独立页面视图，与 My Skills / Explore 导航风格一致。
+- **精选技能聚合**：Explore 数据源改为 7 个精选高质量仓库。
+
+### 修复
+- 切换语言时 Explore 页面短暂闪现「Installing Skills...」加载遮罩。
+
 ## [0.3.0] - 2026-03-15
 
 ### 新增
