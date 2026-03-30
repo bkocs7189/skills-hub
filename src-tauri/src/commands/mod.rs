@@ -30,6 +30,21 @@ use crate::core::sync_engine::{
 use crate::core::tool_adapters::{adapter_by_key, is_tool_installed, resolve_default_path};
 use uuid::Uuid;
 
+/// Validates that a path is within the configured central repo directory.
+fn validate_path_within_central_repo<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &SkillStore,
+    path: &std::path::Path,
+) -> anyhow::Result<()> {
+    let central = resolve_central_repo_path(app, store)?;
+    let canonical_central = central.canonicalize().unwrap_or_else(|_| central.clone());
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if !canonical_path.starts_with(&canonical_central) {
+        anyhow::bail!("path is outside the central repository");
+    }
+    Ok(())
+}
+
 fn format_anyhow_error(err: anyhow::Error) -> String {
     let first = err.to_string();
     // Frontend relies on these prefixes for special flows.
@@ -944,9 +959,15 @@ pub struct SkillFileEntry {
 }
 
 #[tauri::command]
-pub async fn list_skill_files(central_path: String) -> Result<Vec<SkillFileEntry>, String> {
+pub async fn list_skill_files(
+    app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+    central_path: String,
+) -> Result<Vec<SkillFileEntry>, String> {
+    let store = store.inner().clone();
     let path = std::path::PathBuf::from(&central_path);
     tauri::async_runtime::spawn_blocking(move || {
+        validate_path_within_central_repo(&app, &store, &path)?;
         let entries = crate::core::skill_files::list_files(&path)?;
         Ok::<_, anyhow::Error>(
             entries
@@ -964,9 +985,16 @@ pub async fn list_skill_files(central_path: String) -> Result<Vec<SkillFileEntry
 }
 
 #[tauri::command]
-pub async fn read_skill_file(central_path: String, file_path: String) -> Result<String, String> {
+pub async fn read_skill_file(
+    app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+    central_path: String,
+    file_path: String,
+) -> Result<String, String> {
+    let store = store.inner().clone();
     let base = std::path::PathBuf::from(&central_path);
     tauri::async_runtime::spawn_blocking(move || {
+        validate_path_within_central_repo(&app, &store, &base)?;
         crate::core::skill_files::read_file(&base, &file_path)
     })
     .await

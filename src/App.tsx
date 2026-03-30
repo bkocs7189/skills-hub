@@ -2041,7 +2041,17 @@ function App() {
               )}
               {!updateDone && updateBody && (
                 <div className="update-modal-notes">
-                  <Markdown remarkPlugins={[remarkGfm]}>{updateBody}</Markdown>
+                  <Markdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children, ...rest }) => {
+                        if (href && /^javascript:/i.test(href)) {
+                          return <span {...rest}>{children}</span>
+                        }
+                        return <a href={href} rel="noopener noreferrer" {...rest}>{children}</a>
+                      },
+                    }}
+                  >{updateBody}</Markdown>
                 </div>
               )}
             </div>

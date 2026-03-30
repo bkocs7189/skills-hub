@@ -295,6 +295,12 @@ const FileContentRenderer = memo(
           <Markdown
             remarkPlugins={[remarkFrontmatter, remarkGfm]}
             components={{
+              a: ({ href, children, ...rest }) => {
+                if (href && /^javascript:/i.test(href)) {
+                  return <span {...rest}>{children}</span>
+                }
+                return <a href={href} rel="noopener noreferrer" {...rest}>{children}</a>
+              },
               code: ({ className, children, ...rest }) => {
                 const match = /language-(\w+)/.exec(className ?? '')
                 const inline = !match

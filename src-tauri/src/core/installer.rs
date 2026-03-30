@@ -1053,7 +1053,17 @@ pub fn install_git_skill_from_selection<R: tauri::Runtime>(
     let copy_src = if subpath == "." {
         repo_dir.clone()
     } else {
-        repo_dir.join(subpath)
+        let joined = repo_dir.join(subpath);
+        let canonical_base = repo_dir
+            .canonicalize()
+            .with_context(|| format!("canonicalize repo dir: {:?}", repo_dir))?;
+        let canonical_joined = joined
+            .canonicalize()
+            .with_context(|| format!("canonicalize subpath: {:?}", joined))?;
+        if !canonical_joined.starts_with(&canonical_base) {
+            anyhow::bail!("subpath escapes repository directory");
+        }
+        canonical_joined
     };
     if !copy_src.exists() {
         anyhow::bail!("path not found in repo: {:?}", copy_src);
@@ -1131,7 +1141,17 @@ pub fn install_local_skill_from_selection<R: tauri::Runtime>(
     let selected_dir = if subpath == "." {
         base_path.to_path_buf()
     } else {
-        base_path.join(subpath)
+        let joined = base_path.join(subpath);
+        let canonical_base = base_path
+            .canonicalize()
+            .with_context(|| format!("canonicalize base path: {:?}", base_path))?;
+        let canonical_joined = joined
+            .canonicalize()
+            .with_context(|| format!("canonicalize subpath: {:?}", joined))?;
+        if !canonical_joined.starts_with(&canonical_base) {
+            anyhow::bail!("subpath escapes base directory");
+        }
+        canonical_joined
     };
     if !selected_dir.exists() {
         anyhow::bail!("source path not found: {:?}", selected_dir);

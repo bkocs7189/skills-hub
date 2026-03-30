@@ -292,13 +292,16 @@ fn clone_or_pull_via_git_cli(
         }
     } else {
         // Clone.
+        if repo_url.starts_with('-') {
+            anyhow::bail!("invalid repository URL: must not start with '-'");
+        }
         let mut cmd = git_cmd();
         cmd.arg("clone")
             .args(["--depth", "1", "--filter=blob:none", "--no-tags"]);
         if let Some(branch) = branch {
             cmd.arg("--branch").arg(branch).arg("--single-branch");
         }
-        cmd.arg(repo_url).arg(dest);
+        cmd.arg("--").arg(repo_url).arg(dest);
         let out = run_cmd_with_timeout(
             cmd,
             git_timeout(),

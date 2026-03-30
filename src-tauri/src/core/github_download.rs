@@ -59,9 +59,13 @@ fn download_dir_recursive(
         anyhow::bail!("CANCELLED|操作已被用户取消。");
     }
 
+    let encoded_branch = urlencoding::encode(branch);
     let url = format!(
         "https://api.github.com/repos/{}/{}/contents/{}?ref={}",
-        owner, repo, path, branch
+        urlencoding::encode(owner),
+        urlencoding::encode(repo),
+        path,
+        encoded_branch
     );
 
     let mut req = client
