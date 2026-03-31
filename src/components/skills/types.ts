@@ -35,9 +35,12 @@ export type ManagedSkill = {
   updated_at: number
   last_sync_at?: number | null
   status: string
+  asset_type: string
+  config_json?: string | null
+  security_status?: string | null
   targets: {
     tool: string
-    mode: string
+    sync_mode: string
     status: string
     target_path: string
     synced_at?: number | null

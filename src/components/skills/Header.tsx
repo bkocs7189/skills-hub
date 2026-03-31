@@ -36,7 +36,7 @@ const Header = ({
             onClick={() => onViewChange('myskills')}
           >
             <Layers size={16} />
-            {t('navMySkills')}
+            {t('navEcosystem')}
           </button>
           <button
             className={`nav-tab${activeView === 'explore' ? ' active' : ''}`}

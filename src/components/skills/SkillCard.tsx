@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { Box, Copy, Folder, Github, RefreshCw, Trash2 } from 'lucide-react'
+import { Box, Copy, Folder, Github, RefreshCw, Shield, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill, ToolOption } from './types'
@@ -88,6 +88,19 @@ const SkillCard = ({
           >
             {skill.name}
           </button>
+          {skill.asset_type && skill.asset_type !== 'skill' ? (
+            <span className={`asset-type-badge asset-type-${skill.asset_type}`}>
+              {t(`assetType${skill.asset_type === 'mcp_server' ? 'McpServer' : skill.asset_type === 'plugin' ? 'Plugin' : 'Executable'}`)}
+            </span>
+          ) : null}
+          {skill.security_status ? (
+            <span
+              className={`security-indicator security-${skill.security_status}`}
+              title={t(`security${skill.security_status === 'trusted' ? 'Trusted' : skill.security_status === 'flagged' ? 'Flagged' : 'Unknown'}`)}
+            >
+              <Shield size={14} />
+            </span>
+          ) : null}
         </div>
         {skill.description ? (
           <div className="skill-desc">{skill.description}</div>
@@ -137,7 +150,7 @@ const SkillCard = ({
               key={`${skill.id}-${tool.id}`}
               type="button"
               className="tool-pill active"
-              title={`${tool.label} (${target.mode ?? t('unknown')})`}
+              title={`${tool.label} (${target.sync_mode ?? t('unknown')})`}
               onClick={() => void onToggleTool(skill, tool.id)}
             >
               <span className="status-badge" />

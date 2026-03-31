@@ -88,6 +88,7 @@ function App() {
   const updateObjRef = useRef<Update | null>(null) as MutableRefObject<Update | null>
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'updated' | 'name'>('updated')
+  const [assetTypeFilter, setAssetTypeFilter] = useState<'all' | 'skill' | 'mcp_server' | 'plugin' | 'executable'>('all')
   const [activeView, setActiveView] = useState<'myskills' | 'explore' | 'detail' | 'settings'>('myskills')
   const [detailSkill, setDetailSkill] = useState<ManagedSkill | null>(null)
   const [addModalTab, setAddModalTab] = useState<'local' | 'git'>('git')
@@ -491,6 +492,7 @@ function App() {
   const visibleSkills = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const filtered = managedSkills.filter((skill) => {
+      if (assetTypeFilter !== 'all' && skill.asset_type !== assetTypeFilter) return false
       if (!query) return true
       return (
         skill.name.toLowerCase().includes(query) ||
@@ -505,7 +507,7 @@ function App() {
       return (b.updated_at ?? 0) - (a.updated_at ?? 0)
     })
     return sorted
-  }, [managedSkills, searchQuery, sortBy])
+  }, [managedSkills, searchQuery, sortBy, assetTypeFilter])
 
   const [storagePath, setStoragePath] = useState<string>(t('notAvailable'))
   const [gitCacheCleanupDays, setGitCacheCleanupDays] = useState<number>(30)
@@ -756,6 +758,10 @@ function App() {
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchQuery(value)
+  }, [])
+
+  const handleAssetTypeFilterChange = useCallback((value: 'all' | 'skill' | 'mcp_server' | 'plugin' | 'executable') => {
+    setAssetTypeFilter(value)
   }, [])
 
   const handleSyncTargetChange = useCallback(
@@ -1859,8 +1865,10 @@ function App() {
               sortBy={sortBy}
               searchQuery={searchQuery}
               loading={loading}
+              assetTypeFilter={assetTypeFilter}
               onSortChange={handleSortChange}
               onSearchChange={handleSearchChange}
+              onAssetTypeFilterChange={handleAssetTypeFilterChange}
               onRefresh={handleRefresh}
               t={t}
             />

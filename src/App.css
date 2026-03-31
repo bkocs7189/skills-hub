@@ -2442,3 +2442,93 @@
 .skill-name.clickable:hover {
   color: var(--accent-primary);
 }
+
+/* ── Asset Type Badges ── */
+.asset-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.asset-type-skill {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3B82F6;
+}
+
+.asset-type-mcp_server {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8B5CF6;
+}
+
+.asset-type-plugin {
+  background: rgba(245, 158, 11, 0.12);
+  color: #F59E0B;
+}
+
+.asset-type-executable {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+}
+
+/* ── Security Indicator ── */
+.security-indicator {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.security-trusted {
+  color: #10B981;
+}
+
+.security-unknown {
+  color: var(--text-tertiary);
+}
+
+.security-flagged {
+  color: #EF4444;
+}
+
+/* ── Type Filter Bar ── */
+.filter-bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.type-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 32px;
+}
+
+.type-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.type-filter-chip:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.type-filter-chip.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
