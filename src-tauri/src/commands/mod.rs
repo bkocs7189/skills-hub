@@ -478,6 +478,8 @@ pub async fn sync_skill_dir(
                 SyncMode::Symlink => "symlink",
                 SyncMode::Junction => "junction",
                 SyncMode::Copy => "copy",
+                SyncMode::JsonMerge => "json_merge",
+                SyncMode::CliCommand => "cli_command",
             }
             .to_string(),
             target_path: result.target_path.to_string_lossy().to_string(),
@@ -554,6 +556,8 @@ pub async fn sync_skill_to_tool(
                     SyncMode::Symlink => "symlink",
                     SyncMode::Junction => "junction",
                     SyncMode::Copy => "copy",
+                    SyncMode::JsonMerge => "json_merge",
+                    SyncMode::CliCommand => "cli_command",
                 }
                 .to_string(),
                 status: "ok".to_string(),
@@ -569,6 +573,8 @@ pub async fn sync_skill_to_tool(
                 SyncMode::Symlink => "symlink",
                 SyncMode::Junction => "junction",
                 SyncMode::Copy => "copy",
+                SyncMode::JsonMerge => "json_merge",
+                SyncMode::CliCommand => "cli_command",
             }
             .to_string(),
             target_path: result.target_path.to_string_lossy().to_string(),

@@ -9,6 +9,10 @@ pub enum SyncMode {
     Symlink,
     Junction,
     Copy,
+    /// MCP server sync: merge JSON config into tool's config file.
+    JsonMerge,
+    /// Plugin sync: execute CLI command to install/manage.
+    CliCommand,
 }
 
 #[derive(Clone, Debug)]
