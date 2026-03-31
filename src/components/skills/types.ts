@@ -109,3 +109,11 @@ export type SkillFileEntry = {
   path: string
   size: number
 }
+
+export type ScannedMcpServerDto = {
+  tool_key: string
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+}

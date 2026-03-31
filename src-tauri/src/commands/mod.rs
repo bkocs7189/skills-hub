@@ -2,6 +2,7 @@ use anyhow::Context;
 use serde::Serialize;
 use tauri::State;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::core::cache_cleanup::{
@@ -19,8 +20,9 @@ use crate::core::installer::{
     install_local_skill_from_selection, list_git_skills, list_local_skills,
     update_managed_skill_from_source, GitSkillCandidate, InstallResult, LocalSkillCandidate,
 };
+use crate::core::mcp_manager::{self, McpServerConfig};
 use crate::core::onboarding::{build_onboarding_plan, OnboardingPlan};
-use crate::core::skill_store::{SkillStore, SkillTargetRecord};
+use crate::core::skill_store::{AssetRecord, SkillStore, SkillTargetRecord};
 use crate::core::skills_search::{
     search_skills_online as search_skills_online_core, OnlineSkillResult,
 };
@@ -753,6 +755,9 @@ pub struct ManagedSkillDto {
     pub updated_at: i64,
     pub last_sync_at: Option<i64>,
     pub status: String,
+    pub asset_type: String,
+    pub config_json: Option<String>,
+    pub security_status: Option<String>,
     pub targets: Vec<SkillTargetDto>,
 }
 
@@ -886,6 +891,9 @@ fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, S
                 updated_at: skill.updated_at,
                 last_sync_at: skill.last_sync_at,
                 status: skill.status,
+                asset_type: skill.asset_type,
+                config_json: skill.config_json,
+                security_status: skill.security_status,
                 targets,
             }
         })
@@ -1018,6 +1026,236 @@ pub async fn read_skill_file(
 pub fn cancel_current_operation(cancel: State<'_, Arc<CancelToken>>) -> Result<(), String> {
     cancel.cancel();
     Ok(())
+}
+
+// ── MCP Server Management ──
+
+#[derive(Debug, Serialize)]
+pub struct ScannedMcpServerDto {
+    pub tool_key: String,
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+}
+
+impl From<mcp_manager::ScannedMcpServer> for ScannedMcpServerDto {
+    fn from(s: mcp_manager::ScannedMcpServer) -> Self {
+        Self {
+            tool_key: s.tool_key,
+            name: s.name,
+            command: s.config.command,
+            args: s.config.args,
+            env: s.config.env,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn scan_mcp_servers() -> Result<Vec<ScannedMcpServerDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let adapters = crate::core::tool_adapters::default_tool_adapters();
+        let scanned = mcp_manager::scan_all_mcp_servers(&adapters)?;
+        Ok::<_, anyhow::Error>(scanned.into_iter().map(ScannedMcpServerDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn add_mcp_server(
+    store: State<'_, SkillStore>,
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+) -> Result<String, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = McpServerConfig { command, args, env };
+        let config_json = serde_json::to_string(&config).context("serialize MCP config")?;
+        let id = Uuid::new_v4().to_string();
+        let now = now_ms();
+        let record = AssetRecord {
+            id: id.clone(),
+            name,
+            description: None,
+            asset_type: "mcp_server".to_string(),
+            source_type: "manual".to_string(),
+            source_ref: None,
+            source_subpath: None,
+            source_revision: None,
+            central_path: None,
+            config_json: Some(config_json),
+            security_status: None,
+            content_hash: None,
+            created_at: now,
+            updated_at: now,
+            last_sync_at: None,
+            last_seen_at: now,
+            status: "ok".to_string(),
+        };
+        store.upsert_skill(&record)?;
+        Ok::<_, anyhow::Error>(id)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn sync_mcp_to_tool(
+    store: State<'_, SkillStore>,
+    assetId: String,
+    toolKey: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let asset = store
+            .get_skill_by_id(&assetId)?
+            .ok_or_else(|| anyhow::anyhow!("asset not found: {}", assetId))?;
+
+        let config_json = asset
+            .config_json
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("asset has no config_json"))?;
+        let config: McpServerConfig =
+            serde_json::from_str(config_json).context("parse asset config_json")?;
+
+        let adapter =
+            adapter_by_key(&toolKey).ok_or_else(|| anyhow::anyhow!("unknown tool: {}", toolKey))?;
+        if !adapter.supports_mcp {
+            anyhow::bail!("tool {} does not support MCP", toolKey);
+        }
+        let mcp_rel = adapter
+            .mcp_config_path
+            .ok_or_else(|| anyhow::anyhow!("tool {} has no mcp_config_path", toolKey))?;
+        let mcp_key = adapter
+            .mcp_config_key
+            .ok_or_else(|| anyhow::anyhow!("tool {} has no mcp_config_key", toolKey))?;
+
+        let home = dirs::home_dir().context("resolve home")?;
+        let config_path = home.join(mcp_rel);
+
+        mcp_manager::upsert_mcp_server(&config_path, mcp_key, &asset.name, &config)?;
+
+        let record = SkillTargetRecord {
+            id: Uuid::new_v4().to_string(),
+            asset_id: assetId,
+            tool: toolKey,
+            target_path: config_path.to_string_lossy().to_string(),
+            sync_mode: "json_merge".to_string(),
+            status: "ok".to_string(),
+            last_error: None,
+            synced_at: Some(now_ms()),
+        };
+        store.upsert_skill_target(&record)?;
+
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn unsync_mcp_from_tool(
+    store: State<'_, SkillStore>,
+    assetId: String,
+    toolKey: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let asset = store
+            .get_skill_by_id(&assetId)?
+            .ok_or_else(|| anyhow::anyhow!("asset not found: {}", assetId))?;
+
+        let adapter =
+            adapter_by_key(&toolKey).ok_or_else(|| anyhow::anyhow!("unknown tool: {}", toolKey))?;
+        if !adapter.supports_mcp {
+            anyhow::bail!("tool {} does not support MCP", toolKey);
+        }
+        let mcp_rel = adapter
+            .mcp_config_path
+            .ok_or_else(|| anyhow::anyhow!("tool {} has no mcp_config_path", toolKey))?;
+        let mcp_key = adapter
+            .mcp_config_key
+            .ok_or_else(|| anyhow::anyhow!("tool {} has no mcp_config_key", toolKey))?;
+
+        let home = dirs::home_dir().context("resolve home")?;
+        let config_path = home.join(mcp_rel);
+
+        mcp_manager::remove_mcp_server(&config_path, mcp_key, &asset.name)?;
+        store.delete_skill_target(&assetId, &toolKey)?;
+
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn import_mcp_servers(
+    store: State<'_, SkillStore>,
+) -> Result<Vec<ScannedMcpServerDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let adapters = crate::core::tool_adapters::default_tool_adapters();
+        let scanned = mcp_manager::scan_all_mcp_servers(&adapters)?;
+
+        // Deduplicate by name: keep first occurrence.
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut unique: Vec<mcp_manager::ScannedMcpServer> = Vec::new();
+        for entry in &scanned {
+            if seen.insert(entry.name.clone()) {
+                unique.push(entry.clone());
+            }
+        }
+
+        // Create asset records for each unique server.
+        let now = now_ms();
+        for entry in &unique {
+            let config_json =
+                serde_json::to_string(&entry.config).context("serialize MCP config")?;
+
+            // Check if an MCP server asset with this name already exists.
+            let existing = store.list_assets(Some("mcp_server"))?;
+            if existing.iter().any(|a| a.name == entry.name) {
+                continue;
+            }
+
+            let id = Uuid::new_v4().to_string();
+            let record = AssetRecord {
+                id,
+                name: entry.name.clone(),
+                description: None,
+                asset_type: "mcp_server".to_string(),
+                source_type: "imported".to_string(),
+                source_ref: Some(entry.tool_key.clone()),
+                source_subpath: None,
+                source_revision: None,
+                central_path: None,
+                config_json: Some(config_json),
+                security_status: None,
+                content_hash: None,
+                created_at: now,
+                updated_at: now,
+                last_sync_at: None,
+                last_seen_at: now,
+                status: "ok".to_string(),
+            };
+            store.upsert_skill(&record)?;
+        }
+
+        Ok::<_, anyhow::Error>(unique.into_iter().map(ScannedMcpServerDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
 }
 
 #[cfg(test)]

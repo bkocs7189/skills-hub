@@ -7,6 +7,7 @@ pub mod git_fetcher;
 pub mod github_download;
 pub mod github_search;
 pub mod installer;
+pub mod mcp_manager;
 pub mod onboarding;
 pub mod skill_files;
 pub mod skill_store;

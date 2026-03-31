@@ -98,7 +98,12 @@ pub fn run() {
             commands::search_skills_online,
             commands::list_skill_files,
             commands::read_skill_file,
-            commands::cancel_current_operation
+            commands::cancel_current_operation,
+            commands::scan_mcp_servers,
+            commands::add_mcp_server,
+            commands::sync_mcp_to_tool,
+            commands::unsync_mcp_from_tool,
+            commands::import_mcp_servers
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

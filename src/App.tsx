@@ -16,6 +16,7 @@ import DeleteModal from './components/skills/modals/DeleteModal'
 import GitPickModal from './components/skills/modals/GitPickModal'
 import LocalPickModal from './components/skills/modals/LocalPickModal'
 import ImportModal from './components/skills/modals/ImportModal'
+import McpConfigModal from './components/skills/modals/McpConfigModal'
 import NewToolsModal from './components/skills/modals/NewToolsModal'
 import SharedDirModal from './components/skills/modals/SharedDirModal'
 import SettingsPage from './components/skills/SettingsPage'
@@ -27,6 +28,7 @@ import type {
   ManagedSkill,
   OnboardingPlan,
   OnlineSkillDto,
+  ScannedMcpServerDto,
   ToolOption,
   ToolStatusDto,
   UpdateResultDto,
@@ -76,6 +78,7 @@ function App() {
   const [toolStatus, setToolStatus] = useState<ToolStatusDto | null>(null)
   const [showNewToolsModal, setShowNewToolsModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showMcpConfigModal, setShowMcpConfigModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [pendingSharedToggle, setPendingSharedToggle] = useState<{
     skill: ManagedSkill
@@ -693,6 +696,50 @@ function App() {
   const handleOpenAdd = useCallback(() => {
     setShowAddModal(true)
   }, [])
+
+  const handleOpenMcpConfig = useCallback(() => {
+    setShowMcpConfigModal(true)
+  }, [])
+
+  const handleCloseMcpConfig = useCallback(() => {
+    if (!loading) setShowMcpConfigModal(false)
+  }, [loading])
+
+  const handleAddMcpServer = useCallback(
+    async (name: string, command: string, args: string[], env: Record<string, string>) => {
+      if (!isTauri) return
+      setLoading(true)
+      setLoadingStartAt(Date.now())
+      try {
+        await invokeTauri<string>('add_mcp_server', { name, command, args, env })
+        setShowMcpConfigModal(false)
+        setSuccessToastMessage(t('mcpAddServer'))
+        await loadManagedSkills()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setLoading(false)
+        setLoadingStartAt(null)
+      }
+    },
+    [invokeTauri, isTauri, loadManagedSkills, t],
+  )
+
+  const handleImportMcpServers = useCallback(async () => {
+    if (!isTauri) return
+    setLoading(true)
+    setLoadingStartAt(Date.now())
+    try {
+      const imported = await invokeTauri<ScannedMcpServerDto[]>('import_mcp_servers')
+      setSuccessToastMessage(t('mcpImportSuccess', { count: imported.length }))
+      await loadManagedSkills()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+      setLoadingStartAt(null)
+    }
+  }, [invokeTauri, isTauri, loadManagedSkills, t])
 
   const handleCancelLoading = useCallback(() => {
     void invokeTauri('cancel_current_operation').catch(() => {})
@@ -1872,6 +1919,26 @@ function App() {
               onRefresh={handleRefresh}
               t={t}
             />
+            {(assetTypeFilter === 'all' || assetTypeFilter === 'mcp_server') && (
+              <div className="mcp-action-bar">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  disabled={loading}
+                  onClick={handleOpenMcpConfig}
+                >
+                  {t('mcpAddServer')}
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  disabled={loading}
+                  onClick={handleImportMcpServers}
+                >
+                  {t('mcpImportServers')}
+                </button>
+              </div>
+            )}
             <SkillsList
               plan={plan}
               visibleSkills={visibleSkills}
@@ -2017,6 +2084,14 @@ function App() {
         onToggleAll={handleToggleAllGitCandidates}
         onToggleCandidate={handleToggleGitCandidate}
         onInstall={handleInstallSelectedCandidates}
+        t={t}
+      />
+
+      <McpConfigModal
+        open={showMcpConfigModal}
+        loading={loading}
+        onRequestClose={handleCloseMcpConfig}
+        onSubmit={handleAddMcpServer}
         t={t}
       />
 
