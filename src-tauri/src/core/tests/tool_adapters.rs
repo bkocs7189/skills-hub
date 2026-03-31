@@ -42,12 +42,7 @@ fn scan_tool_dir_skips_codex_system_and_includes_symlink_dir() {
         std::os::unix::fs::symlink(dir.path().join("a"), dir.path().join("link-a")).unwrap();
     }
 
-    let tool = ToolAdapter {
-        id: ToolId::Codex,
-        display_name: "Codex",
-        relative_skills_dir: "ignored",
-        relative_detect_dir: "ignored",
-    };
+    let tool = ToolAdapter::skill_only(ToolId::Codex, "Codex", "ignored", "ignored");
 
     let out = scan_tool_dir(&tool, dir.path()).unwrap();
     let names: Vec<String> = out.iter().map(|s| s.name.clone()).collect();
@@ -71,12 +66,7 @@ fn scan_tool_dir_skips_app_support_path() {
         .join("Library/Application Support/com.tauri.dev/skills");
     std::fs::create_dir_all(root.join("foo")).unwrap();
 
-    let tool = ToolAdapter {
-        id: ToolId::Cursor,
-        display_name: "Cursor",
-        relative_skills_dir: "ignored",
-        relative_detect_dir: "ignored",
-    };
+    let tool = ToolAdapter::skill_only(ToolId::Cursor, "Cursor", "ignored", "ignored");
 
     let out = scan_tool_dir(&tool, &root).unwrap();
     assert!(out.is_empty());

@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 pub enum ToolId {
     Cursor,
     ClaudeCode,
+    ClaudeDesktop,
     Codex,
     OpenCode,
     Antigravity,
@@ -53,6 +54,7 @@ impl ToolId {
         match self {
             ToolId::Cursor => "cursor",
             ToolId::ClaudeCode => "claude_code",
+            ToolId::ClaudeDesktop => "claude_desktop",
             ToolId::Codex => "codex",
             ToolId::OpenCode => "opencode",
             ToolId::Antigravity => "antigravity",
@@ -105,6 +107,43 @@ pub struct ToolAdapter {
     pub relative_skills_dir: &'static str,
     /// Directory used to detect whether the tool is installed (aligned with add-skill docs).
     pub relative_detect_dir: &'static str,
+    /// Whether this tool supports MCP server configuration.
+    #[allow(dead_code)]
+    pub supports_mcp: bool,
+    /// Relative path (from home) to MCP config file, e.g. ".cursor/mcp.json".
+    #[allow(dead_code)]
+    pub mcp_config_path: Option<&'static str>,
+    /// JSON key that holds MCP servers in the config file, e.g. "mcpServers".
+    #[allow(dead_code)]
+    pub mcp_config_key: Option<&'static str>,
+    /// Whether this tool supports plugins.
+    #[allow(dead_code)]
+    pub supports_plugins: bool,
+    /// CLI binary name for plugin operations, e.g. "claude".
+    #[allow(dead_code)]
+    pub plugin_cli: Option<&'static str>,
+}
+
+impl ToolAdapter {
+    /// Create a skill-only adapter (no MCP/plugin support). Used by the majority of tools.
+    pub const fn skill_only(
+        id: ToolId,
+        display_name: &'static str,
+        relative_skills_dir: &'static str,
+        relative_detect_dir: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            display_name,
+            relative_skills_dir,
+            relative_detect_dir,
+            supports_mcp: false,
+            mcp_config_path: None,
+            mcp_config_key: None,
+            supports_plugins: false,
+            plugin_cli: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -118,299 +157,94 @@ pub struct DetectedSkill {
 
 pub fn default_tool_adapters() -> Vec<ToolAdapter> {
     vec![
+        // Tools with MCP and/or plugin support
         ToolAdapter {
             id: ToolId::Cursor,
             display_name: "Cursor",
             relative_skills_dir: ".cursor/skills",
             relative_detect_dir: ".cursor",
+            supports_mcp: true,
+            mcp_config_path: Some(".cursor/mcp.json"),
+            mcp_config_key: Some("mcpServers"),
+            supports_plugins: false,
+            plugin_cli: None,
         },
         ToolAdapter {
             id: ToolId::ClaudeCode,
             display_name: "Claude Code",
             relative_skills_dir: ".claude/skills",
             relative_detect_dir: ".claude",
+            supports_mcp: true,
+            mcp_config_path: Some(".claude/config/config.json"),
+            mcp_config_key: Some("mcpServers"),
+            supports_plugins: true,
+            plugin_cli: Some("claude"),
         },
         ToolAdapter {
-            id: ToolId::Codex,
-            display_name: "Codex",
-            relative_skills_dir: ".codex/skills",
-            relative_detect_dir: ".codex",
+            id: ToolId::ClaudeDesktop,
+            display_name: "Claude Desktop",
+            relative_skills_dir: "Library/Application Support/Claude/skills",
+            relative_detect_dir: "Library/Application Support/Claude",
+            supports_mcp: true,
+            mcp_config_path: Some("Library/Application Support/Claude/claude_desktop_config.json"),
+            mcp_config_key: Some("mcpServers"),
+            supports_plugins: false,
+            plugin_cli: None,
         },
-        ToolAdapter {
-            id: ToolId::OpenCode,
-            display_name: "OpenCode",
-            // add-skill global path: ~/.config/opencode/skills/
-            relative_skills_dir: ".config/opencode/skills",
-            relative_detect_dir: ".config/opencode",
-        },
-        ToolAdapter {
-            id: ToolId::Antigravity,
-            display_name: "Antigravity",
-            // add-skill global path: ~/.gemini/antigravity/global_skills/
-            relative_skills_dir: ".gemini/antigravity/global_skills",
-            relative_detect_dir: ".gemini/antigravity",
-        },
-        ToolAdapter {
-            id: ToolId::Amp,
-            display_name: "Amp",
-            // add-skill global path: ~/.config/agents/skills/
-            relative_skills_dir: ".config/agents/skills",
-            relative_detect_dir: ".config/agents",
-        },
-        ToolAdapter {
-            id: ToolId::KimiCli,
-            display_name: "Kimi Code CLI",
-            // add-skill global path: ~/.config/agents/skills/
-            // NOTE: Shares the same skills directory with Amp.
-            relative_skills_dir: ".config/agents/skills",
-            relative_detect_dir: ".config/agents",
-        },
-        ToolAdapter {
-            id: ToolId::Augment,
-            display_name: "Augment",
-            // add-skill global path: ~/.augment/rules/
-            relative_skills_dir: ".augment/rules",
-            relative_detect_dir: ".augment",
-        },
-        ToolAdapter {
-            id: ToolId::OpenClaw,
-            display_name: "OpenClaw",
-            // add-skill global path: ~/.openclaw/skills/
-            relative_skills_dir: ".openclaw/skills",
-            relative_detect_dir: ".openclaw",
-        },
-        ToolAdapter {
-            id: ToolId::Cline,
-            display_name: "Cline",
-            // add-skill global path: ~/.cline/skills/
-            relative_skills_dir: ".cline/skills",
-            relative_detect_dir: ".cline",
-        },
-        ToolAdapter {
-            id: ToolId::CodeBuddy,
-            display_name: "CodeBuddy",
-            // add-skill global path: ~/.codebuddy/skills/
-            relative_skills_dir: ".codebuddy/skills",
-            relative_detect_dir: ".codebuddy",
-        },
-        ToolAdapter {
-            id: ToolId::CommandCode,
-            display_name: "Command Code",
-            // add-skill global path: ~/.commandcode/skills/
-            relative_skills_dir: ".commandcode/skills",
-            relative_detect_dir: ".commandcode",
-        },
-        ToolAdapter {
-            id: ToolId::Continue,
-            display_name: "Continue",
-            // add-skill global path: ~/.continue/skills/
-            relative_skills_dir: ".continue/skills",
-            relative_detect_dir: ".continue",
-        },
-        ToolAdapter {
-            id: ToolId::Crush,
-            display_name: "Crush",
-            // add-skill global path: ~/.config/crush/skills/
-            relative_skills_dir: ".config/crush/skills",
-            relative_detect_dir: ".config/crush",
-        },
-        ToolAdapter {
-            id: ToolId::Junie,
-            display_name: "Junie",
-            // add-skill global path: ~/.junie/skills/
-            relative_skills_dir: ".junie/skills",
-            relative_detect_dir: ".junie",
-        },
-        ToolAdapter {
-            id: ToolId::IflowCli,
-            display_name: "iFlow CLI",
-            // add-skill global path: ~/.iflow/skills/
-            relative_skills_dir: ".iflow/skills",
-            relative_detect_dir: ".iflow",
-        },
-        ToolAdapter {
-            id: ToolId::KiroCli,
-            display_name: "Kiro CLI",
-            // add-skill global path: ~/.kiro/skills/
-            relative_skills_dir: ".kiro/skills",
-            relative_detect_dir: ".kiro",
-        },
-        ToolAdapter {
-            id: ToolId::Kode,
-            display_name: "Kode",
-            // add-skill global path: ~/.kode/skills/
-            relative_skills_dir: ".kode/skills",
-            relative_detect_dir: ".kode",
-        },
-        ToolAdapter {
-            id: ToolId::McpJam,
-            display_name: "MCPJam",
-            // add-skill global path: ~/.mcpjam/skills/
-            relative_skills_dir: ".mcpjam/skills",
-            relative_detect_dir: ".mcpjam",
-        },
-        ToolAdapter {
-            id: ToolId::MistralVibe,
-            display_name: "Mistral Vibe",
-            // add-skill global path: ~/.vibe/skills/
-            relative_skills_dir: ".vibe/skills",
-            relative_detect_dir: ".vibe",
-        },
-        ToolAdapter {
-            id: ToolId::Mux,
-            display_name: "Mux",
-            // add-skill global path: ~/.mux/skills/
-            relative_skills_dir: ".mux/skills",
-            relative_detect_dir: ".mux",
-        },
-        ToolAdapter {
-            id: ToolId::OpenClaude,
-            display_name: "OpenClaude IDE",
-            // add-skill global path: ~/.openclaude/skills/
-            relative_skills_dir: ".openclaude/skills",
-            relative_detect_dir: ".openclaude",
-        },
-        ToolAdapter {
-            id: ToolId::OpenHands,
-            display_name: "OpenHands",
-            // add-skill global path: ~/.openhands/skills/
-            relative_skills_dir: ".openhands/skills",
-            relative_detect_dir: ".openhands",
-        },
-        ToolAdapter {
-            id: ToolId::Pi,
-            display_name: "Pi",
-            // add-skill global path: ~/.pi/agent/skills/
-            relative_skills_dir: ".pi/agent/skills",
-            relative_detect_dir: ".pi",
-        },
-        ToolAdapter {
-            id: ToolId::Qoder,
-            display_name: "Qoder",
-            // add-skill global path: ~/.qoder/skills/
-            relative_skills_dir: ".qoder/skills",
-            relative_detect_dir: ".qoder",
-        },
-        ToolAdapter {
-            id: ToolId::QoderWork,
-            display_name: "QoderWork",
-            // add-skill global path: ~/.qoderwork/skills/
-            relative_skills_dir: ".qoderwork/skills",
-            relative_detect_dir: ".qoderwork",
-        },
-        ToolAdapter {
-            id: ToolId::QwenCode,
-            display_name: "Qwen Code",
-            // add-skill global path: ~/.qwen/skills/
-            relative_skills_dir: ".qwen/skills",
-            relative_detect_dir: ".qwen",
-        },
-        ToolAdapter {
-            id: ToolId::Trae,
-            display_name: "Trae",
-            // add-skill global path: ~/.trae/skills/
-            relative_skills_dir: ".trae/skills",
-            relative_detect_dir: ".trae",
-        },
-        ToolAdapter {
-            id: ToolId::TraeCn,
-            display_name: "Trae CN",
-            // add-skill global path: ~/.trae-cn/skills/
-            relative_skills_dir: ".trae-cn/skills",
-            relative_detect_dir: ".trae-cn",
-        },
-        ToolAdapter {
-            id: ToolId::Zencoder,
-            display_name: "Zencoder",
-            // add-skill global path: ~/.zencoder/skills/
-            relative_skills_dir: ".zencoder/skills",
-            relative_detect_dir: ".zencoder",
-        },
-        ToolAdapter {
-            id: ToolId::Neovate,
-            display_name: "Neovate",
-            // add-skill global path: ~/.neovate/skills/
-            relative_skills_dir: ".neovate/skills",
-            relative_detect_dir: ".neovate",
-        },
-        ToolAdapter {
-            id: ToolId::Pochi,
-            display_name: "Pochi",
-            // add-skill global path: ~/.pochi/skills/
-            relative_skills_dir: ".pochi/skills",
-            relative_detect_dir: ".pochi",
-        },
-        ToolAdapter {
-            id: ToolId::AdaL,
-            display_name: "AdaL",
-            // add-skill global path: ~/.adal/skills/
-            relative_skills_dir: ".adal/skills",
-            relative_detect_dir: ".adal",
-        },
-        ToolAdapter {
-            id: ToolId::KiloCode,
-            display_name: "Kilo Code",
-            // add-skill global path: ~/.kilocode/skills/
-            relative_skills_dir: ".kilocode/skills",
-            relative_detect_dir: ".kilocode",
-        },
-        ToolAdapter {
-            id: ToolId::RooCode,
-            display_name: "Roo Code",
-            // add-skill global path: ~/.roo/skills/
-            relative_skills_dir: ".roo/skills",
-            relative_detect_dir: ".roo",
-        },
-        ToolAdapter {
-            id: ToolId::Goose,
-            display_name: "Goose",
-            // add-skill global path: ~/.config/goose/skills/
-            relative_skills_dir: ".config/goose/skills",
-            relative_detect_dir: ".config/goose",
-        },
-        ToolAdapter {
-            id: ToolId::GeminiCli,
-            display_name: "Gemini CLI",
-            // add-skill global path: ~/.gemini/skills/
-            relative_skills_dir: ".gemini/skills",
-            relative_detect_dir: ".gemini",
-        },
-        ToolAdapter {
-            id: ToolId::GithubCopilot,
-            display_name: "GitHub Copilot",
-            // add-skill global path: ~/.copilot/skills/
-            relative_skills_dir: ".copilot/skills",
-            relative_detect_dir: ".copilot",
-        },
-        ToolAdapter {
-            id: ToolId::Clawdbot,
-            display_name: "Clawdbot",
-            // add-skill global path: ~/.clawdbot/skills/
-            relative_skills_dir: ".clawdbot/skills",
-            relative_detect_dir: ".clawdbot",
-        },
-        ToolAdapter {
-            id: ToolId::Droid,
-            display_name: "Droid",
-            // add-skill global path: ~/.factory/skills/
-            relative_skills_dir: ".factory/skills",
-            relative_detect_dir: ".factory",
-        },
-        ToolAdapter {
-            id: ToolId::Windsurf,
-            display_name: "Windsurf",
-            // add-skill global path: ~/.codeium/windsurf/skills/
-            relative_skills_dir: ".codeium/windsurf/skills",
-            relative_detect_dir: ".codeium/windsurf",
-        },
-        ToolAdapter {
-            id: ToolId::Moltbot,
-            display_name: "MoltBot",
-            // add-skill global path: ~/.moltbot/skills/
-            relative_skills_dir: ".moltbot/skills",
-            relative_detect_dir: ".moltbot",
-        },
+        // Skill-only tools
+        ToolAdapter::skill_only(ToolId::Codex, "Codex", ".codex/skills", ".codex"),
+        ToolAdapter::skill_only(ToolId::OpenCode, "OpenCode", ".config/opencode/skills", ".config/opencode"),
+        ToolAdapter::skill_only(ToolId::Antigravity, "Antigravity", ".gemini/antigravity/global_skills", ".gemini/antigravity"),
+        ToolAdapter::skill_only(ToolId::Amp, "Amp", ".config/agents/skills", ".config/agents"),
+        ToolAdapter::skill_only(ToolId::KimiCli, "Kimi Code CLI", ".config/agents/skills", ".config/agents"),
+        ToolAdapter::skill_only(ToolId::Augment, "Augment", ".augment/rules", ".augment"),
+        ToolAdapter::skill_only(ToolId::OpenClaw, "OpenClaw", ".openclaw/skills", ".openclaw"),
+        ToolAdapter::skill_only(ToolId::Cline, "Cline", ".cline/skills", ".cline"),
+        ToolAdapter::skill_only(ToolId::CodeBuddy, "CodeBuddy", ".codebuddy/skills", ".codebuddy"),
+        ToolAdapter::skill_only(ToolId::CommandCode, "Command Code", ".commandcode/skills", ".commandcode"),
+        ToolAdapter::skill_only(ToolId::Continue, "Continue", ".continue/skills", ".continue"),
+        ToolAdapter::skill_only(ToolId::Crush, "Crush", ".config/crush/skills", ".config/crush"),
+        ToolAdapter::skill_only(ToolId::Junie, "Junie", ".junie/skills", ".junie"),
+        ToolAdapter::skill_only(ToolId::IflowCli, "iFlow CLI", ".iflow/skills", ".iflow"),
+        ToolAdapter::skill_only(ToolId::KiroCli, "Kiro CLI", ".kiro/skills", ".kiro"),
+        ToolAdapter::skill_only(ToolId::Kode, "Kode", ".kode/skills", ".kode"),
+        ToolAdapter::skill_only(ToolId::McpJam, "MCPJam", ".mcpjam/skills", ".mcpjam"),
+        ToolAdapter::skill_only(ToolId::MistralVibe, "Mistral Vibe", ".vibe/skills", ".vibe"),
+        ToolAdapter::skill_only(ToolId::Mux, "Mux", ".mux/skills", ".mux"),
+        ToolAdapter::skill_only(ToolId::OpenClaude, "OpenClaude IDE", ".openclaude/skills", ".openclaude"),
+        ToolAdapter::skill_only(ToolId::OpenHands, "OpenHands", ".openhands/skills", ".openhands"),
+        ToolAdapter::skill_only(ToolId::Pi, "Pi", ".pi/agent/skills", ".pi"),
+        ToolAdapter::skill_only(ToolId::Qoder, "Qoder", ".qoder/skills", ".qoder"),
+        ToolAdapter::skill_only(ToolId::QoderWork, "QoderWork", ".qoderwork/skills", ".qoderwork"),
+        ToolAdapter::skill_only(ToolId::QwenCode, "Qwen Code", ".qwen/skills", ".qwen"),
+        ToolAdapter::skill_only(ToolId::Trae, "Trae", ".trae/skills", ".trae"),
+        ToolAdapter::skill_only(ToolId::TraeCn, "Trae CN", ".trae-cn/skills", ".trae-cn"),
+        ToolAdapter::skill_only(ToolId::Zencoder, "Zencoder", ".zencoder/skills", ".zencoder"),
+        ToolAdapter::skill_only(ToolId::Neovate, "Neovate", ".neovate/skills", ".neovate"),
+        ToolAdapter::skill_only(ToolId::Pochi, "Pochi", ".pochi/skills", ".pochi"),
+        ToolAdapter::skill_only(ToolId::AdaL, "AdaL", ".adal/skills", ".adal"),
+        ToolAdapter::skill_only(ToolId::KiloCode, "Kilo Code", ".kilocode/skills", ".kilocode"),
+        ToolAdapter::skill_only(ToolId::RooCode, "Roo Code", ".roo/skills", ".roo"),
+        ToolAdapter::skill_only(ToolId::Goose, "Goose", ".config/goose/skills", ".config/goose"),
+        ToolAdapter::skill_only(ToolId::GeminiCli, "Gemini CLI", ".gemini/skills", ".gemini"),
+        ToolAdapter::skill_only(ToolId::GithubCopilot, "GitHub Copilot", ".copilot/skills", ".copilot"),
+        ToolAdapter::skill_only(ToolId::Clawdbot, "Clawdbot", ".clawdbot/skills", ".clawdbot"),
+        ToolAdapter::skill_only(ToolId::Droid, "Droid", ".factory/skills", ".factory"),
+        ToolAdapter::skill_only(ToolId::Windsurf, "Windsurf", ".codeium/windsurf/skills", ".codeium/windsurf"),
+        ToolAdapter::skill_only(ToolId::Moltbot, "MoltBot", ".moltbot/skills", ".moltbot"),
     ]
+}
+
+/// Resolve the MCP config file path for a tool.
+#[allow(dead_code)]
+pub fn resolve_mcp_config_path(adapter: &ToolAdapter) -> Result<Option<PathBuf>> {
+    match adapter.mcp_config_path {
+        Some(rel) => {
+            let home = dirs::home_dir().context("failed to resolve home directory")?;
+            Ok(Some(home.join(rel)))
+        }
+        None => Ok(None),
+    }
 }
 
 /// Tools can share the same global skills directory (e.g. Amp and Kimi Code CLI).
