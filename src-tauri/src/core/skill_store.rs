@@ -472,6 +472,221 @@ impl SkillStore {
         })
     }
 
+    // ── Library CRUD ──
+
+    pub fn add_library(
+        &self,
+        name: &str,
+        url: &str,
+        library_type: &str,
+        asset_types: &str,
+        trusted: bool,
+    ) -> Result<crate::core::library_manager::LibraryRecord> {
+        use crate::core::library_manager::LibraryRecord;
+        let id = uuid::Uuid::new_v4().to_string();
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO libraries (id, name, url, library_type, asset_types, trusted, last_indexed_at, item_count, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, 0, 'active')",
+                params![id, name, url, library_type, asset_types, trusted],
+            )?;
+            Ok(LibraryRecord {
+                id,
+                name: name.to_string(),
+                url: url.to_string(),
+                library_type: library_type.to_string(),
+                asset_types: asset_types.to_string(),
+                trusted,
+                last_indexed_at: None,
+                item_count: Some(0),
+                status: "active".to_string(),
+            })
+        })
+    }
+
+    pub fn list_libraries(&self) -> Result<Vec<crate::core::library_manager::LibraryRecord>> {
+        use crate::core::library_manager::LibraryRecord;
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, url, library_type, asset_types, trusted, last_indexed_at, item_count, status
+                 FROM libraries
+                 ORDER BY name ASC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(LibraryRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    url: row.get(2)?,
+                    library_type: row.get(3)?,
+                    asset_types: row.get(4)?,
+                    trusted: row.get(5)?,
+                    last_indexed_at: row.get(6)?,
+                    item_count: row.get(7)?,
+                    status: row.get(8)?,
+                })
+            })?;
+            let mut items = Vec::new();
+            for row in rows {
+                items.push(row?);
+            }
+            Ok(items)
+        })
+    }
+
+    pub fn delete_library(&self, library_id: &str) -> Result<()> {
+        self.with_conn(|conn| {
+            // library_items have ON DELETE CASCADE, so just delete the library.
+            conn.execute("DELETE FROM libraries WHERE id = ?1", params![library_id])?;
+            Ok(())
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn upsert_library_item(
+        &self,
+        item: &crate::core::library_manager::LibraryItemRecord,
+    ) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO library_items (id, library_id, asset_type, name, description, subpath, metadata_json, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(library_id, subpath) DO UPDATE SET
+                   asset_type = excluded.asset_type,
+                   name = excluded.name,
+                   description = excluded.description,
+                   metadata_json = excluded.metadata_json,
+                   indexed_at = excluded.indexed_at",
+                params![
+                    item.id,
+                    item.library_id,
+                    item.asset_type,
+                    item.name,
+                    item.description,
+                    item.subpath,
+                    item.metadata_json,
+                    item.indexed_at,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn list_library_items(
+        &self,
+        library_id: Option<&str>,
+        asset_type: Option<&str>,
+    ) -> Result<Vec<crate::core::library_manager::LibraryItemRecord>> {
+        self.with_conn(|conn| {
+            let mut sql = String::from(
+                "SELECT id, library_id, asset_type, name, description, subpath, metadata_json, indexed_at
+                 FROM library_items WHERE 1=1",
+            );
+            let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            let mut idx = 1;
+
+            if let Some(lib_id) = library_id {
+                sql.push_str(&format!(" AND library_id = ?{}", idx));
+                param_values.push(Box::new(lib_id.to_string()));
+                idx += 1;
+            }
+            if let Some(at) = asset_type {
+                sql.push_str(&format!(" AND asset_type = ?{}", idx));
+                param_values.push(Box::new(at.to_string()));
+                let _ = idx;
+            }
+            sql.push_str(" ORDER BY name ASC");
+
+            let mut stmt = conn.prepare(&sql)?;
+            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                param_values.iter().map(|p| p.as_ref()).collect();
+            let rows = stmt.query_map(params_ref.as_slice(), row_to_library_item)?;
+            let mut items = Vec::new();
+            for row in rows {
+                items.push(row?);
+            }
+            Ok(items)
+        })
+    }
+
+    pub fn search_library_items(
+        &self,
+        query: &str,
+        asset_type: Option<&str>,
+    ) -> Result<Vec<crate::core::library_manager::LibraryItemRecord>> {
+        let pattern = format!("%{}%", query);
+        self.with_conn(|conn| {
+            let mut items = Vec::new();
+            if let Some(at) = asset_type {
+                let mut stmt = conn.prepare(
+                    "SELECT id, library_id, asset_type, name, description, subpath, metadata_json, indexed_at
+                     FROM library_items
+                     WHERE (name LIKE ?1 OR description LIKE ?1) AND asset_type = ?2
+                     ORDER BY name ASC",
+                )?;
+                let rows = stmt.query_map(params![pattern, at], row_to_library_item)?;
+                for row in rows {
+                    items.push(row?);
+                }
+            } else {
+                let mut stmt = conn.prepare(
+                    "SELECT id, library_id, asset_type, name, description, subpath, metadata_json, indexed_at
+                     FROM library_items
+                     WHERE (name LIKE ?1 OR description LIKE ?1)
+                     ORDER BY name ASC",
+                )?;
+                let rows = stmt.query_map(params![pattern], row_to_library_item)?;
+                for row in rows {
+                    items.push(row?);
+                }
+            }
+            Ok(items)
+        })
+    }
+
+    pub fn seed_default_libraries(&self) -> Result<usize> {
+        let defaults = [
+            (
+                "Anthropic Official Plugins",
+                "https://github.com/anthropics/claude-code-plugins",
+                "marketplace",
+                r#"["skill","plugin"]"#,
+            ),
+            (
+                "Claude Code Templates",
+                "https://github.com/anthropics/claude-code-templates",
+                "marketplace",
+                r#"["skill"]"#,
+            ),
+            (
+                "Anthropic Agent Skills",
+                "https://github.com/anthropics/anthropic-agent-skills",
+                "marketplace",
+                r#"["skill"]"#,
+            ),
+        ];
+
+        let mut count = 0usize;
+        self.with_conn(|conn| {
+            for (name, url, lib_type, asset_types) in &defaults {
+                let exists: bool = conn.query_row(
+                    "SELECT COUNT(*) > 0 FROM libraries WHERE url = ?1",
+                    params![url],
+                    |row| row.get(0),
+                )?;
+                if !exists {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    conn.execute(
+                        "INSERT INTO libraries (id, name, url, library_type, asset_types, trusted, last_indexed_at, item_count, status)
+                         VALUES (?1, ?2, ?3, ?4, ?5, 1, NULL, 0, 'active')",
+                        params![id, name, url, lib_type, asset_types],
+                    )?;
+                    count += 1;
+                }
+            }
+            Ok(count)
+        })
+    }
+
     fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         let conn = Connection::open(&self.db_path)
             .with_context(|| format!("failed to open db at {:?}", self.db_path))?;
@@ -501,6 +716,22 @@ fn row_to_asset(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssetRecord> {
         last_sync_at: row.get(14)?,
         last_seen_at: row.get(15)?,
         status: row.get(16)?,
+    })
+}
+
+/// Helper to map a row from the library_items table into a LibraryItemRecord.
+fn row_to_library_item(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<crate::core::library_manager::LibraryItemRecord> {
+    Ok(crate::core::library_manager::LibraryItemRecord {
+        id: row.get(0)?,
+        library_id: row.get(1)?,
+        asset_type: row.get(2)?,
+        name: row.get(3)?,
+        description: row.get(4)?,
+        subpath: row.get(5)?,
+        metadata_json: row.get(6)?,
+        indexed_at: row.get(7)?,
     })
 }
 

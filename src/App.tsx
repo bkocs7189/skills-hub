@@ -19,11 +19,14 @@ import ImportModal from './components/skills/modals/ImportModal'
 import McpConfigModal from './components/skills/modals/McpConfigModal'
 import NewToolsModal from './components/skills/modals/NewToolsModal'
 import SharedDirModal from './components/skills/modals/SharedDirModal'
+import LibraryManageModal from './components/skills/modals/LibraryManageModal'
 import SettingsPage from './components/skills/SettingsPage'
 import type {
   FeaturedSkillDto,
   GitSkillCandidate,
   InstallResultDto,
+  LibraryDto,
+  LibraryItemDto,
   LocalSkillCandidate,
   ManagedSkill,
   OnboardingPlan,
@@ -103,6 +106,12 @@ function App() {
   const [searchLoading, setSearchLoading] = useState(false)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [autoSelectSkillName, setAutoSelectSkillName] = useState<string | null>(null)
+  const [libraries, setLibraries] = useState<LibraryDto[]>([])
+  const [libraryItems, setLibraryItems] = useState<LibraryItemDto[]>([])
+  const [selectedLibraryId, setSelectedLibraryId] = useState('')
+  const [librarySearchQuery, setLibrarySearchQuery] = useState('')
+  const [librarySearchResults, setLibrarySearchResults] = useState<LibraryItemDto[]>([])
+  const [showLibraryManageModal, setShowLibraryManageModal] = useState(false)
 
   const isTauri =
     typeof window !== 'undefined' &&
@@ -639,17 +648,83 @@ function App() {
     }
   }, [featuredSkills.length, invokeTauri])
 
+  const loadLibraries = useCallback(async () => {
+    try {
+      const result = await invokeTauri<LibraryDto[]>('get_libraries')
+      setLibraries(result)
+    } catch {
+      // silent
+    }
+  }, [invokeTauri])
+
+  const loadLibraryItems = useCallback(async (libraryId: string) => {
+    if (!libraryId) {
+      setLibraryItems([])
+      return
+    }
+    try {
+      const result = await invokeTauri<LibraryItemDto[]>('get_library_items', { libraryId })
+      setLibraryItems(result)
+    } catch {
+      setLibraryItems([])
+    }
+  }, [invokeTauri])
+
+  const handleLibrarySelect = useCallback((libraryId: string) => {
+    setSelectedLibraryId(libraryId)
+    setLibrarySearchQuery('')
+    setLibrarySearchResults([])
+    loadLibraryItems(libraryId)
+  }, [loadLibraryItems])
+
+  const handleLibrarySearch = useCallback(async (query: string) => {
+    setLibrarySearchQuery(query)
+    if (query.trim().length < 2) {
+      setLibrarySearchResults([])
+      return
+    }
+    try {
+      const result = await invokeTauri<LibraryItemDto[]>('search_library_items', { query })
+      setLibrarySearchResults(result)
+    } catch {
+      setLibrarySearchResults([])
+    }
+  }, [invokeTauri])
+
+  const handleAddLibrary = useCallback(async (name: string, url: string, libraryType: string) => {
+    try {
+      await invokeTauri<LibraryDto>('add_library', { name, url, libraryType })
+      loadLibraries()
+    } catch (err) {
+      toast.error(String(err))
+    }
+  }, [invokeTauri, loadLibraries])
+
+  const handleDeleteLibrary = useCallback(async (libraryId: string) => {
+    try {
+      await invokeTauri<void>('delete_library', { libraryId })
+      if (selectedLibraryId === libraryId) {
+        setSelectedLibraryId('')
+        setLibraryItems([])
+      }
+      loadLibraries()
+    } catch (err) {
+      toast.error(String(err))
+    }
+  }, [invokeTauri, loadLibraries, selectedLibraryId])
+
   const handleViewChange = useCallback(
     (view: 'myskills' | 'explore') => {
       setActiveView(view)
       if (view === 'explore') {
         loadFeaturedSkills()
+        loadLibraries()
       }
       if (view === 'myskills') {
         setDetailSkill(null)
       }
     },
-    [loadFeaturedSkills],
+    [loadFeaturedSkills, loadLibraries],
   )
 
   const handleOpenDetail = useCallback((skill: ManagedSkill) => {
@@ -2047,9 +2122,17 @@ function App() {
             searchLoading={searchLoading}
             managedSkills={managedSkills}
             loading={loading}
+            libraries={libraries}
+            libraryItems={libraryItems}
+            selectedLibraryId={selectedLibraryId}
+            librarySearchQuery={librarySearchQuery}
+            librarySearchResults={librarySearchResults}
             onExploreFilterChange={handleExploreFilterChange}
             onInstallSkill={handleExploreInstall}
             onOpenManualAdd={handleOpenAdd}
+            onOpenLibraryManage={() => setShowLibraryManageModal(true)}
+            onLibrarySelect={handleLibrarySelect}
+            onLibrarySearch={handleLibrarySearch}
             t={t}
           />
         )}
@@ -2236,6 +2319,15 @@ function App() {
           </div>
         </div>
       )}
+
+      <LibraryManageModal
+        open={showLibraryManageModal}
+        libraries={libraries}
+        onRequestClose={() => setShowLibraryManageModal(false)}
+        onAddLibrary={handleAddLibrary}
+        onDeleteLibrary={handleDeleteLibrary}
+        t={t}
+      />
       </div>
   )
 }

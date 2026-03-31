@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react'
-import { Plus, Search, Star } from 'lucide-react'
+import { Library, Plus, Search, Settings2, ShieldCheck, Star } from 'lucide-react'
 import type { TFunction } from 'i18next'
-import type { FeaturedSkillDto, ManagedSkill, OnlineSkillDto } from './types'
+import type { FeaturedSkillDto, LibraryDto, LibraryItemDto, ManagedSkill, OnlineSkillDto } from './types'
 
 type ExplorePageProps = {
   featuredSkills: FeaturedSkillDto[]
@@ -11,9 +11,17 @@ type ExplorePageProps = {
   searchLoading: boolean
   managedSkills: ManagedSkill[]
   loading: boolean
+  libraries: LibraryDto[]
+  libraryItems: LibraryItemDto[]
+  selectedLibraryId: string
+  librarySearchQuery: string
+  librarySearchResults: LibraryItemDto[]
   onExploreFilterChange: (value: string) => void
   onInstallSkill: (sourceUrl: string, skillName?: string) => void
   onOpenManualAdd: () => void
+  onOpenLibraryManage: () => void
+  onLibrarySelect: (libraryId: string) => void
+  onLibrarySearch: (query: string) => void
   t: TFunction
 }
 
@@ -31,9 +39,17 @@ const ExplorePage = ({
   searchLoading,
   managedSkills,
   loading,
+  libraries,
+  libraryItems,
+  selectedLibraryId,
+  librarySearchQuery,
+  librarySearchResults,
   onExploreFilterChange,
   onInstallSkill,
   onOpenManualAdd,
+  onOpenLibraryManage,
+  onLibrarySelect,
+  onLibrarySearch,
   t,
 }: ExplorePageProps) => {
   const filteredSkills = useMemo(() => {
@@ -53,7 +69,6 @@ const ExplorePage = ({
 
   const isSearchActive = exploreFilter.trim().length >= 2
 
-  // Check if a skill is already installed by matching name + source (case-insensitive)
   const installedSkillKeys = useMemo(() => {
     const keys = new Set<string>()
     for (const skill of managedSkills) {
@@ -75,6 +90,10 @@ const ExplorePage = ({
       .toLowerCase()
     return installedSkillKeys.has(`${skillName.toLowerCase()}|${normalizedSource}`)
   }
+
+  const displayLibraryItems = librarySearchQuery.trim().length >= 2
+    ? librarySearchResults
+    : libraryItems
 
   return (
     <div className="explore-page">
@@ -99,12 +118,101 @@ const ExplorePage = ({
             {t('manualAdd')}
           </button>
         </div>
+
+        {/* Library selector row */}
+        {libraries.length > 0 && (
+          <div className="library-selector-row">
+            <div className="library-selector-left">
+              <Library size={14} />
+              <select
+                className="library-selector"
+                value={selectedLibraryId}
+                onChange={(e) => onLibrarySelect(e.target.value)}
+              >
+                <option value="">{t('librariesTitle')}</option>
+                {libraries.map((lib) => (
+                  <option key={lib.id} value={lib.id}>
+                    {lib.name}
+                    {lib.trusted ? ` (${t('libraryTrusted')})` : ''}
+                  </option>
+                ))}
+              </select>
+              {selectedLibraryId && (
+                <div className="library-search-wrap">
+                  <Search size={13} className="library-search-icon" />
+                  <input
+                    className="library-search-input"
+                    placeholder={t('librarySearch')}
+                    value={librarySearchQuery}
+                    onChange={(e) => onLibrarySearch(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-ghost library-manage-btn"
+              type="button"
+              onClick={onOpenLibraryManage}
+              title={t('libraryManage')}
+            >
+              <Settings2 size={14} />
+              {t('libraryManage')}
+            </button>
+          </div>
+        )}
+
         <div className="explore-source-label">
           {t('exploreSourceHint')}
         </div>
       </div>
 
       <div className="explore-scroll">
+        {/* Library items section */}
+        {selectedLibraryId && displayLibraryItems.length > 0 && (
+          <>
+            <div className="explore-section-title">
+              {t('librariesTitle')}
+              {libraries.find((l) => l.id === selectedLibraryId)?.trusted && (
+                <span className="library-trusted-badge">
+                  <ShieldCheck size={12} />
+                  {t('libraryTrusted')}
+                </span>
+              )}
+            </div>
+            <div className="explore-grid">
+              {displayLibraryItems.map((item) => (
+                <div key={item.id} className="explore-card">
+                  <div className="explore-card-top">
+                    <div className="explore-card-info">
+                      <div className="explore-card-name">{item.name}</div>
+                      <div className="explore-card-author">{item.asset_type}</div>
+                    </div>
+                    <button
+                      className="explore-btn-install"
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        const lib = libraries.find((l) => l.id === item.library_id)
+                        if (lib) {
+                          const sourceUrl = item.subpath
+                            ? `${lib.url}/tree/main/${item.subpath}`
+                            : lib.url
+                          onInstallSkill(sourceUrl, item.name)
+                        }
+                      }}
+                    >
+                      {t('install')}
+                    </button>
+                  </div>
+                  {item.description && (
+                    <div className="explore-card-desc">{item.description}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
         {/* Featured section */}
         {featuredLoading ? (
           <div className="explore-loading">{t('exploreLoading')}</div>
