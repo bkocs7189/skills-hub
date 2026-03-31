@@ -11,6 +11,7 @@ pub mod library_manager;
 pub mod mcp_manager;
 pub mod onboarding;
 pub mod plugin_manager;
+pub mod security_gate;
 pub mod skill_files;
 pub mod skill_store;
 pub mod skills_search;

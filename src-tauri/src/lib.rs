@@ -118,7 +118,15 @@ pub fn run() {
             commands::delete_library,
             commands::get_library_items,
             commands::search_library_items,
-            commands::seed_libraries
+            commands::seed_libraries,
+            commands::get_deploy_profiles,
+            commands::create_deploy_profile,
+            commands::update_deploy_profile,
+            commands::delete_deploy_profile,
+            commands::check_asset_security,
+            commands::deep_scan_asset,
+            commands::get_trusted_publishers,
+            commands::set_trusted_publishers
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

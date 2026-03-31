@@ -20,8 +20,10 @@ import McpConfigModal from './components/skills/modals/McpConfigModal'
 import NewToolsModal from './components/skills/modals/NewToolsModal'
 import SharedDirModal from './components/skills/modals/SharedDirModal'
 import LibraryManageModal from './components/skills/modals/LibraryManageModal'
+import SecurityScanModal from './components/skills/modals/SecurityScanModal'
 import SettingsPage from './components/skills/SettingsPage'
 import type {
+  DeployProfileDto,
   FeaturedSkillDto,
   GitSkillCandidate,
   InstallResultDto,
@@ -33,6 +35,7 @@ import type {
   OnlineSkillDto,
   PluginHealthDto,
   ScannedMcpServerDto,
+  SecurityResultDto,
   ToolOption,
   ToolStatusDto,
   UpdateResultDto,
@@ -112,6 +115,12 @@ function App() {
   const [librarySearchQuery, setLibrarySearchQuery] = useState('')
   const [librarySearchResults, setLibrarySearchResults] = useState<LibraryItemDto[]>([])
   const [showLibraryManageModal, setShowLibraryManageModal] = useState(false)
+  const [deployProfiles, setDeployProfiles] = useState<DeployProfileDto[]>([])
+  const [showSecurityScanModal, setShowSecurityScanModal] = useState(false)
+  const [securityScanResult, setSecurityScanResult] = useState<SecurityResultDto | null>(null)
+  const [securityScanLoading, setSecurityScanLoading] = useState(false)
+  const [securityHasDeepScanned, setSecurityHasDeepScanned] = useState(false)
+  const [pendingSecurityAssetPath, setPendingSecurityAssetPath] = useState<string | null>(null)
 
   const isTauri =
     typeof window !== 'undefined' &&
@@ -631,9 +640,55 @@ function App() {
       .join('、')
   }, [toolStatus, tools])
 
+  const loadDeployProfiles = useCallback(async () => {
+    try {
+      const result = await invokeTauri<DeployProfileDto[]>('get_deploy_profiles')
+      setDeployProfiles(result)
+    } catch {
+      // silent
+    }
+  }, [invokeTauri])
+
+  const handleCreateDeployProfile = useCallback(
+    async (name: string, rules: string, isDefault: boolean) => {
+      try {
+        await invokeTauri<string>('create_deploy_profile', { name, rules, isDefault })
+        await loadDeployProfiles()
+      } catch (err) {
+        toast.error(String(err))
+      }
+    },
+    [invokeTauri, loadDeployProfiles],
+  )
+
+  const handleUpdateDeployProfile = useCallback(
+    async (profileId: string, name: string, rules: string, isDefault: boolean) => {
+      try {
+        await invokeTauri<void>('update_deploy_profile', { profileId, name, rules, isDefault })
+        await loadDeployProfiles()
+      } catch (err) {
+        toast.error(String(err))
+      }
+    },
+    [invokeTauri, loadDeployProfiles],
+  )
+
+  const handleDeleteDeployProfile = useCallback(
+    async (profileId: string) => {
+      try {
+        await invokeTauri<void>('delete_deploy_profile', { profileId })
+        await loadDeployProfiles()
+      } catch (err) {
+        toast.error(String(err))
+      }
+    },
+    [invokeTauri, loadDeployProfiles],
+  )
+
   const handleOpenSettings = useCallback(() => {
     setActiveView('settings')
-  }, [])
+    loadDeployProfiles()
+  }, [loadDeployProfiles])
 
   const loadFeaturedSkills = useCallback(async () => {
     if (featuredSkills.length > 0) return
@@ -1269,6 +1324,7 @@ function App() {
     setLoadingStartAt(Date.now())
     setError(null)
     setActionMessage(t('actions.creatingGitSkill'))
+    let lastInstalledCentralPath: string | null = null
     try {
       const url = gitUrl.trim()
       const isFolderUrl = url.includes('/tree/') || url.includes('/blob/')
@@ -1278,6 +1334,7 @@ function App() {
           repoUrl: url,
           name: gitName.trim() || undefined,
         })
+        lastInstalledCentralPath = created.central_path
         {
           const selectedInstalledIds = tools
             .filter((tool) => syncTargets[tool.id] && isInstalled(tool.id))
@@ -1341,6 +1398,7 @@ function App() {
             name: gitName.trim() || undefined,
             },
           )
+          lastInstalledCentralPath = created.central_path
           {
             const selectedInstalledIds = tools
               .filter((tool) => syncTargets[tool.id] && isInstalled(tool.id))
@@ -1409,6 +1467,7 @@ function App() {
                 name: gitName.trim() || undefined,
               },
             )
+            lastInstalledCentralPath = created.central_path
             {
               const selectedInstalledIds = tools
                 .filter((tool) => syncTargets[tool.id] && isInstalled(tool.id))
@@ -1484,7 +1543,13 @@ function App() {
       setActionMessage(null)
       setShowAddModal(false)
       await loadManagedSkills()
+      // Run post-install security check for Explore installs
+      if (isExploreInstallRef.current && lastInstalledCentralPath) {
+        isExploreInstallRef.current = false
+        void handleRunSecurityCheck(lastInstalledCentralPath, false, 'git')
+      }
     } catch (err) {
+      isExploreInstallRef.current = false
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
@@ -1494,6 +1559,7 @@ function App() {
 
   const [exploreInstallTrigger, setExploreInstallTrigger] = useState(0)
   const exploreInstallUrlRef = useRef<string | null>(null)
+  const isExploreInstallRef = useRef(false)
 
   const handleExploreInstall = useCallback(
     (sourceUrl: string, skillName?: string) => {
@@ -1506,6 +1572,7 @@ function App() {
         }
         setSyncTargets(targets)
       }
+      isExploreInstallRef.current = true
       exploreInstallUrlRef.current = sourceUrl
       setExploreInstallTrigger((n) => n + 1)
     },
@@ -1519,6 +1586,53 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exploreInstallTrigger])
+
+  const handleRunSecurityCheck = useCallback(
+    async (assetPath: string, libraryTrusted: boolean, sourceType: string) => {
+      setPendingSecurityAssetPath(assetPath)
+      setSecurityScanLoading(true)
+      setSecurityHasDeepScanned(false)
+      setSecurityScanResult(null)
+      setShowSecurityScanModal(true)
+      try {
+        const result = await invokeTauri<SecurityResultDto>('check_asset_security', {
+          assetPath,
+          libraryTrusted,
+          sourceType,
+        })
+        setSecurityScanResult(result)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err), { duration: 2600 })
+        setShowSecurityScanModal(false)
+      } finally {
+        setSecurityScanLoading(false)
+      }
+    },
+    [invokeTauri],
+  )
+
+  const handleDeepScan = useCallback(async () => {
+    if (!pendingSecurityAssetPath) return
+    setSecurityScanLoading(true)
+    try {
+      const result = await invokeTauri<SecurityResultDto>('deep_scan_asset', {
+        assetPath: pendingSecurityAssetPath,
+      })
+      setSecurityScanResult(result)
+      setSecurityHasDeepScanned(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err), { duration: 2600 })
+    } finally {
+      setSecurityScanLoading(false)
+    }
+  }, [invokeTauri, pendingSecurityAssetPath])
+
+  const handleCloseSecurityScan = useCallback(() => {
+    setShowSecurityScanModal(false)
+    setSecurityScanResult(null)
+    setPendingSecurityAssetPath(null)
+    setSecurityHasDeepScanned(false)
+  }, [])
 
   const handleInstallSelectedLocalCandidates = async () => {
     const selected = localCandidates.filter(
@@ -2110,6 +2224,10 @@ function App() {
             onClearGitCacheNow={handleClearGitCacheNow}
             githubToken={githubToken}
             onGithubTokenChange={handleGithubTokenChange}
+            deployProfiles={deployProfiles}
+            onCreateProfile={handleCreateDeployProfile}
+            onUpdateProfile={handleUpdateDeployProfile}
+            onDeleteProfile={handleDeleteDeployProfile}
             onBack={handleCloseSettings}
             t={t}
           />
@@ -2328,6 +2446,17 @@ function App() {
         onDeleteLibrary={handleDeleteLibrary}
         t={t}
       />
+
+      <SecurityScanModal
+        open={showSecurityScanModal}
+        loading={securityScanLoading}
+        result={securityScanResult}
+        onRequestClose={handleCloseSecurityScan}
+        onDeepScan={handleDeepScan}
+        hasDeepScanned={securityHasDeepScanned}
+        t={t}
+      />
+
       </div>
   )
 }

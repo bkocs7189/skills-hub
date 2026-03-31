@@ -22,7 +22,8 @@ use crate::core::installer::{
 };
 use crate::core::mcp_manager::{self, McpServerConfig};
 use crate::core::onboarding::{build_onboarding_plan, OnboardingPlan};
-use crate::core::skill_store::{AssetRecord, SkillStore, SkillTargetRecord};
+use crate::core::security_gate;
+use crate::core::skill_store::{AssetRecord, DeployProfileRecord, SkillStore, SkillTargetRecord};
 use crate::core::skills_search::{
     search_skills_online as search_skills_online_core, OnlineSkillResult,
 };
@@ -1555,6 +1556,202 @@ pub async fn seed_libraries(store: State<'_, SkillStore>) -> Result<usize, Strin
     tauri::async_runtime::spawn_blocking(move || {
         let count = store.seed_default_libraries()?;
         Ok::<_, anyhow::Error>(count)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+// ── Deploy Profiles ──
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployProfileDto {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub rules: String,
+}
+
+impl From<DeployProfileRecord> for DeployProfileDto {
+    fn from(r: DeployProfileRecord) -> Self {
+        Self {
+            id: r.id,
+            name: r.name,
+            is_default: r.is_default,
+            rules: r.rules,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_deploy_profiles(
+    store: State<'_, SkillStore>,
+) -> Result<Vec<DeployProfileDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let profiles = store.list_deploy_profiles()?;
+        Ok::<_, anyhow::Error>(profiles.into_iter().map(DeployProfileDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn create_deploy_profile(
+    store: State<'_, SkillStore>,
+    name: String,
+    rules: String,
+    isDefault: bool,
+) -> Result<String, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.create_deploy_profile(&name, &rules, isDefault)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn update_deploy_profile(
+    store: State<'_, SkillStore>,
+    profileId: String,
+    name: String,
+    rules: String,
+    isDefault: bool,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.update_deploy_profile(&profileId, &name, &rules, isDefault)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn delete_deploy_profile(
+    store: State<'_, SkillStore>,
+    profileId: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.delete_deploy_profile(&profileId))
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(format_anyhow_error)
+}
+
+// ── Security Gate ──
+
+#[derive(Debug, Serialize)]
+pub struct SecurityFindingDto {
+    pub severity: String,
+    pub category: String,
+    pub description: String,
+    pub file_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SecurityResultDto {
+    pub tier: String,
+    pub status: String,
+    pub findings: Vec<SecurityFindingDto>,
+}
+
+fn to_security_result_dto(result: security_gate::SecurityResult) -> SecurityResultDto {
+    SecurityResultDto {
+        tier: match result.tier {
+            security_gate::TrustTier::TrustedPublisher => "TrustedPublisher",
+            security_gate::TrustTier::KnownSource => "KnownSource",
+            security_gate::TrustTier::UnknownSource => "UnknownSource",
+            security_gate::TrustTier::Flagged => "Flagged",
+        }
+        .to_string(),
+        status: result.status,
+        findings: result
+            .findings
+            .into_iter()
+            .map(|f| SecurityFindingDto {
+                severity: f.severity,
+                category: f.category,
+                description: f.description,
+                file_path: f.file_path,
+            })
+            .collect(),
+    }
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn check_asset_security(
+    assetPath: String,
+    libraryTrusted: bool,
+    sourceType: String,
+) -> Result<SecurityResultDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::PathBuf::from(&assetPath);
+        let tier = security_gate::determine_trust_tier(libraryTrusted, &sourceType);
+        let result = security_gate::tier1_check(&path, &tier);
+        Ok::<_, anyhow::Error>(to_security_result_dto(result))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn deep_scan_asset(assetPath: String) -> Result<SecurityResultDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::PathBuf::from(&assetPath);
+        let result = security_gate::tier2_deep_scan(&path);
+        Ok::<_, anyhow::Error>(to_security_result_dto(result))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn get_trusted_publishers(store: State<'_, SkillStore>) -> Result<Vec<String>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let stored = store.get_setting("trusted_publishers")?;
+        let publishers: Vec<String> = match stored {
+            Some(json) => serde_json::from_str(&json).unwrap_or_else(|_| {
+                security_gate::get_default_trusted_publishers()
+                    .into_iter()
+                    .map(String::from)
+                    .collect()
+            }),
+            None => security_gate::get_default_trusted_publishers()
+                .into_iter()
+                .map(String::from)
+                .collect(),
+        };
+        Ok::<_, anyhow::Error>(publishers)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn set_trusted_publishers(
+    store: State<'_, SkillStore>,
+    publishers: Vec<String>,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let json =
+            serde_json::to_string(&publishers).context("failed to serialize trusted publishers")?;
+        store.set_setting("trusted_publishers", &json)?;
+        Ok::<_, anyhow::Error>(())
     })
     .await
     .map_err(|err| err.to_string())?

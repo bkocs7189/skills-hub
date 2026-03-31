@@ -162,3 +162,23 @@ export type LibraryItemDto = {
   metadata_json?: string | null
   indexed_at: number
 }
+
+export type DeployProfileDto = {
+  id: string
+  name: string
+  isDefault: boolean
+  rules: string
+}
+
+export type SecurityFindingDto = {
+  severity: string
+  category: string
+  description: string
+  file_path?: string | null
+}
+
+export type SecurityResultDto = {
+  tier: string
+  status: string
+  findings: SecurityFindingDto[]
+}
