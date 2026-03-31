@@ -470,3 +470,73 @@ fn list_assets_filters_by_type() {
     assert_eq!(plugins.len(), 1);
     assert_eq!(plugins[0].id, "p1");
 }
+
+#[test]
+fn deploy_profiles_create_and_list() {
+    let (_dir, store) = make_store();
+
+    let id1 = store
+        .create_deploy_profile("Default", r#"{"skill":["claude_code"]}"#, true)
+        .unwrap();
+    let _id2 = store
+        .create_deploy_profile("CI", r#"{"skill":["cursor"]}"#, false)
+        .unwrap();
+
+    let profiles = store.list_deploy_profiles().unwrap();
+    assert_eq!(profiles.len(), 2);
+
+    let default = store.get_default_deploy_profile().unwrap().unwrap();
+    assert_eq!(default.id, id1);
+    assert!(default.is_default);
+}
+
+#[test]
+fn deploy_profiles_setting_default_unsets_previous() {
+    let (_dir, store) = make_store();
+
+    let id1 = store.create_deploy_profile("First", r#"{}"#, true).unwrap();
+    let id2 = store
+        .create_deploy_profile("Second", r#"{}"#, true)
+        .unwrap();
+
+    let default = store.get_default_deploy_profile().unwrap().unwrap();
+    assert_eq!(default.id, id2, "newest default should win");
+
+    // Verify the first profile is no longer default
+    let profiles = store.list_deploy_profiles().unwrap();
+    let first = profiles.iter().find(|p| p.id == id1).unwrap();
+    assert!(!first.is_default);
+}
+
+#[test]
+fn deploy_profiles_update_sets_default() {
+    let (_dir, store) = make_store();
+
+    let id1 = store.create_deploy_profile("A", r#"{}"#, true).unwrap();
+    let id2 = store.create_deploy_profile("B", r#"{}"#, false).unwrap();
+
+    store
+        .update_deploy_profile(&id2, "B-updated", r#"{"skill":["cursor"]}"#, true)
+        .unwrap();
+
+    let default = store.get_default_deploy_profile().unwrap().unwrap();
+    assert_eq!(default.id, id2);
+    assert_eq!(default.name, "B-updated");
+
+    let profiles = store.list_deploy_profiles().unwrap();
+    let a = profiles.iter().find(|p| p.id == id1).unwrap();
+    assert!(!a.is_default);
+}
+
+#[test]
+fn deploy_profiles_delete() {
+    let (_dir, store) = make_store();
+
+    let id1 = store
+        .create_deploy_profile("ToDelete", r#"{}"#, false)
+        .unwrap();
+    assert_eq!(store.list_deploy_profiles().unwrap().len(), 1);
+
+    store.delete_deploy_profile(&id1).unwrap();
+    assert_eq!(store.list_deploy_profiles().unwrap().len(), 0);
+}

@@ -2,8 +2,30 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { Update } from '@tauri-apps/plugin-updater'
+import type { DeployProfileDto } from './types'
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'done' | 'error'
+
+type DeployProfileRules = {
+  skill?: string[]
+  mcp_server?: string[]
+  plugin?: string[]
+  executable?: string[]
+}
+
+const ASSET_TOOL_OPTIONS: { assetType: keyof DeployProfileRules; labelKey: string; tools: string[] }[] = [
+  { assetType: 'skill', labelKey: 'deployProfileSkillTargets', tools: ['claude_code', 'cursor', 'gemini_cli', 'windsurf', 'github_copilot', 'roo_code', 'cline', 'goose', 'amp', 'codex'] },
+  { assetType: 'mcp_server', labelKey: 'deployProfileMcpTargets', tools: ['claude_code', 'cursor', 'windsurf', 'cline', 'roo_code'] },
+  { assetType: 'plugin', labelKey: 'deployProfilePluginTargets', tools: ['claude_code'] },
+]
+
+function parseRules(rulesJson: string): DeployProfileRules {
+  try {
+    return JSON.parse(rulesJson) as DeployProfileRules
+  } catch {
+    return {}
+  }
+}
 
 type SettingsPageProps = {
   isTauri: boolean
@@ -20,9 +42,100 @@ type SettingsPageProps = {
   onGitCacheTtlSecsChange: (nextSecs: number) => void
   onClearGitCacheNow: () => void
   onGithubTokenChange: (token: string) => void
+  deployProfiles: DeployProfileDto[]
+  onCreateProfile: (name: string, rules: string, isDefault: boolean) => void
+  onUpdateProfile: (id: string, name: string, rules: string, isDefault: boolean) => void
+  onDeleteProfile: (id: string) => void
   onBack: () => void
   t: TFunction
 }
+
+type DeployProfileCardProps = {
+  profile: DeployProfileDto
+  profileCount: number
+  onUpdate: (id: string, name: string, rules: string, isDefault: boolean) => void
+  onDelete: (id: string) => void
+  t: TFunction
+}
+
+const DeployProfileCard = memo(({ profile, profileCount, onUpdate, onDelete, t }: DeployProfileCardProps) => {
+  const [localName, setLocalName] = useState(profile.name)
+  const rules = useMemo(() => parseRules(profile.rules), [profile.rules])
+
+  const handleToggleTool = useCallback(
+    (assetType: keyof DeployProfileRules, toolId: string, checked: boolean) => {
+      const current = rules[assetType] ?? []
+      const next = checked
+        ? [...current, toolId]
+        : current.filter((id) => id !== toolId)
+      const updated = { ...rules, [assetType]: next }
+      onUpdate(profile.id, profile.name, JSON.stringify(updated), profile.isDefault)
+    },
+    [rules, onUpdate, profile.id, profile.name, profile.isDefault],
+  )
+
+  return (
+    <div className="deploy-profile-card">
+      <div className="deploy-profile-header">
+        <input
+          className="deploy-profile-name-input"
+          value={localName}
+          onChange={(e) => setLocalName(e.target.value)}
+          onBlur={() => {
+            if (localName !== profile.name && localName.trim()) {
+              onUpdate(profile.id, localName.trim(), profile.rules, profile.isDefault)
+            }
+          }}
+        />
+        {profile.isDefault && (
+          <span className="deploy-profile-default-badge">{t('deployProfileDefault')}</span>
+        )}
+      </div>
+      <div className="deploy-profile-rules">
+        {ASSET_TOOL_OPTIONS.map(({ assetType, labelKey, tools }) => (
+          <div key={assetType} className="deploy-profile-rule-group">
+            <div className="deploy-profile-rule-label">{t(labelKey)}</div>
+            <div className="deploy-profile-tool-grid">
+              {tools.map((toolId) => {
+                const isChecked = (rules[assetType] ?? []).includes(toolId)
+                return (
+                  <label key={toolId} className="deploy-profile-tool-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => handleToggleTool(assetType, toolId, e.target.checked)}
+                    />
+                    <span>{t(`tools.${toolId}`, { defaultValue: toolId })}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="deploy-profile-actions">
+        {!profile.isDefault && (
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={() => onUpdate(profile.id, profile.name, profile.rules, true)}
+          >
+            {t('deployProfileSetDefault')}
+          </button>
+        )}
+        {profileCount > 1 && (
+          <button
+            className="btn btn-secondary btn-sm deploy-profile-delete-btn"
+            type="button"
+            onClick={() => onDelete(profile.id)}
+          >
+            {t('deployProfileDelete')}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+})
 
 const SettingsPage = ({
   isTauri,
@@ -39,6 +152,10 @@ const SettingsPage = ({
   onClearGitCacheNow,
   githubToken,
   onGithubTokenChange,
+  deployProfiles,
+  onCreateProfile,
+  onUpdateProfile,
+  onDeleteProfile,
   onBack,
   t,
 }: SettingsPageProps) => {
@@ -343,6 +460,39 @@ const SettingsPage = ({
             </div>
           )}
           <div className="settings-helper">{t('updateHint')}</div>
+        </div>
+
+        <div className="settings-field deploy-profiles-section">
+          <div className="deploy-profiles-header-row">
+            <label className="settings-label">{t('deployProfiles')}</label>
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              onClick={() => {
+                onCreateProfile(
+                  `Profile ${deployProfiles.length + 1}`,
+                  JSON.stringify({ skill: [], mcp_server: [], plugin: [] }),
+                  deployProfiles.length === 0,
+                )
+              }}
+            >
+              {t('deployProfileAdd')}
+            </button>
+          </div>
+          {deployProfiles.length === 0 ? (
+            <div className="deploy-profile-empty">{t('deployProfileNoProfiles')}</div>
+          ) : (
+            deployProfiles.map((profile) => (
+              <DeployProfileCard
+                key={profile.id}
+                profile={profile}
+                profileCount={deployProfiles.length}
+                onUpdate={onUpdateProfile}
+                onDelete={onDeleteProfile}
+                t={t}
+              />
+            ))
+          )}
         </div>
 
       </div>

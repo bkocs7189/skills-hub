@@ -104,6 +104,14 @@ pub struct AssetTargetRecord {
 /// Backward-compatible alias.
 pub type SkillTargetRecord = AssetTargetRecord;
 
+#[derive(Clone, Debug)]
+pub struct DeployProfileRecord {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub rules: String,
+}
+
 impl SkillStore {
     pub fn new(db_path: PathBuf) -> Self {
         Self { db_path }
@@ -684,6 +692,94 @@ impl SkillStore {
                 }
             }
             Ok(count)
+        })
+    }
+
+    // ── Deploy Profile CRUD ──
+
+    pub fn create_deploy_profile(
+        &self,
+        name: &str,
+        rules: &str,
+        is_default: bool,
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.with_conn(|conn| {
+            if is_default {
+                conn.execute("UPDATE deploy_profiles SET is_default = 0", [])?;
+            }
+            conn.execute(
+                "INSERT INTO deploy_profiles (id, name, is_default, rules) VALUES (?1, ?2, ?3, ?4)",
+                params![id, name, is_default, rules],
+            )?;
+            Ok(id)
+        })
+    }
+
+    pub fn list_deploy_profiles(&self) -> Result<Vec<DeployProfileRecord>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, is_default, rules FROM deploy_profiles ORDER BY name ASC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(DeployProfileRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    is_default: row.get(2)?,
+                    rules: row.get(3)?,
+                })
+            })?;
+            let mut items = Vec::new();
+            for row in rows {
+                items.push(row?);
+            }
+            Ok(items)
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn get_default_deploy_profile(&self) -> Result<Option<DeployProfileRecord>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, is_default, rules FROM deploy_profiles WHERE is_default = 1 LIMIT 1",
+            )?;
+            let mut rows = stmt.query([])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(DeployProfileRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    is_default: row.get(2)?,
+                    rules: row.get(3)?,
+                }))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
+    pub fn update_deploy_profile(
+        &self,
+        id: &str,
+        name: &str,
+        rules: &str,
+        is_default: bool,
+    ) -> Result<()> {
+        self.with_conn(|conn| {
+            if is_default {
+                conn.execute("UPDATE deploy_profiles SET is_default = 0", [])?;
+            }
+            conn.execute(
+                "UPDATE deploy_profiles SET name = ?1, rules = ?2, is_default = ?3 WHERE id = ?4",
+                params![name, rules, is_default, id],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn delete_deploy_profile(&self, id: &str) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM deploy_profiles WHERE id = ?1", params![id])?;
+            Ok(())
         })
     }
 
