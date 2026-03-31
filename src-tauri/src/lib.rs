@@ -36,6 +36,11 @@ pub fn run() {
             // Backfill description for skills that were installed before V2 schema.
             core::installer::backfill_skill_descriptions(&store);
 
+            // Seed default libraries (idempotent — skips if already present).
+            if let Err(err) = store.seed_default_libraries() {
+                log::warn!("failed to seed default libraries: {}", err);
+            }
+
             // Best-effort cleanup of our own old git temp directories.
             // Safety:
             // - Only deletes directories that match prefix `skills-hub-git-*`
@@ -103,7 +108,17 @@ pub fn run() {
             commands::add_mcp_server,
             commands::sync_mcp_to_tool,
             commands::unsync_mcp_from_tool,
-            commands::import_mcp_servers
+            commands::import_mcp_servers,
+            commands::get_plugins,
+            commands::import_plugins,
+            commands::diagnose_plugins,
+            commands::get_marketplaces,
+            commands::get_libraries,
+            commands::add_library,
+            commands::delete_library,
+            commands::get_library_items,
+            commands::search_library_items,
+            commands::seed_libraries
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -117,3 +117,48 @@ export type ScannedMcpServerDto = {
   args: string[]
   env: Record<string, string>
 }
+
+export type PluginInfoDto = {
+  name: string
+  marketplace: string
+  version: string
+  install_path: string
+  installed_at: string
+  scope: string
+  git_commit_sha?: string | null
+}
+
+export type PluginHealthDto = {
+  name: string
+  healthy: boolean
+  issues: string[]
+}
+
+export type MarketplaceInfoDto = {
+  name: string
+  plugin_count: number
+  path: string
+}
+
+export type LibraryDto = {
+  id: string
+  name: string
+  url: string
+  library_type: string
+  asset_types: string
+  trusted: boolean
+  last_indexed_at?: number | null
+  item_count?: number | null
+  status: string
+}
+
+export type LibraryItemDto = {
+  id: string
+  library_id: string
+  asset_type: string
+  name: string
+  description?: string | null
+  subpath?: string | null
+  metadata_json?: string | null
+  indexed_at: number
+}

@@ -1258,6 +1258,309 @@ pub async fn import_mcp_servers(
     .map_err(format_anyhow_error)
 }
 
+// ── Plugin Management ──
+
+use crate::core::plugin_manager;
+
+#[derive(Debug, Serialize)]
+pub struct PluginInfoDto {
+    pub name: String,
+    pub marketplace: String,
+    pub version: String,
+    pub install_path: String,
+    pub installed_at: String,
+    pub scope: String,
+    pub git_commit_sha: Option<String>,
+}
+
+impl From<plugin_manager::PluginInfo> for PluginInfoDto {
+    fn from(p: plugin_manager::PluginInfo) -> Self {
+        Self {
+            name: p.name,
+            marketplace: p.marketplace,
+            version: p.version,
+            install_path: p.install_path,
+            installed_at: p.installed_at,
+            scope: p.scope,
+            git_commit_sha: p.git_commit_sha,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PluginHealthDto {
+    pub name: String,
+    pub healthy: bool,
+    pub issues: Vec<String>,
+}
+
+impl From<plugin_manager::PluginHealthReport> for PluginHealthDto {
+    fn from(r: plugin_manager::PluginHealthReport) -> Self {
+        Self {
+            name: r.name,
+            healthy: r.healthy,
+            issues: r.issues,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct MarketplaceInfoDto {
+    pub name: String,
+    pub plugin_count: usize,
+    pub path: String,
+}
+
+impl From<plugin_manager::MarketplaceInfo> for MarketplaceInfoDto {
+    fn from(m: plugin_manager::MarketplaceInfo) -> Self {
+        Self {
+            name: m.name,
+            plugin_count: m.plugin_count,
+            path: m.path,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_plugins() -> Result<Vec<PluginInfoDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let plugins = plugin_manager::read_installed_plugins()?;
+        Ok::<_, anyhow::Error>(plugins.into_iter().map(PluginInfoDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn import_plugins(store: State<'_, SkillStore>) -> Result<usize, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let plugins = plugin_manager::read_installed_plugins()?;
+        let existing = store.list_assets(Some("plugin"))?;
+        let now = now_ms();
+        let mut count = 0usize;
+
+        for plugin in &plugins {
+            let display_name = format!("{}@{}", plugin.name, plugin.marketplace);
+            if existing.iter().any(|a| a.name == display_name) {
+                continue;
+            }
+
+            let config = serde_json::json!({
+                "marketplace": plugin.marketplace,
+                "scope": plugin.scope,
+                "version": plugin.version,
+                "install_path": plugin.install_path,
+                "git_commit_sha": plugin.git_commit_sha,
+            });
+
+            let id = Uuid::new_v4().to_string();
+            let record = AssetRecord {
+                id,
+                name: display_name,
+                description: None,
+                asset_type: "plugin".to_string(),
+                source_type: "imported".to_string(),
+                source_ref: Some(plugin.marketplace.clone()),
+                source_subpath: None,
+                source_revision: plugin.git_commit_sha.clone(),
+                central_path: Some(plugin.install_path.clone()),
+                config_json: Some(config.to_string()),
+                security_status: None,
+                content_hash: None,
+                created_at: now,
+                updated_at: now,
+                last_sync_at: None,
+                last_seen_at: now,
+                status: "ok".to_string(),
+            };
+            store.upsert_skill(&record)?;
+            count += 1;
+        }
+
+        Ok::<_, anyhow::Error>(count)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn diagnose_plugins() -> Result<Vec<PluginHealthDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let reports = plugin_manager::diagnose_all_plugins()?;
+        Ok::<_, anyhow::Error>(reports.into_iter().map(PluginHealthDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn get_marketplaces() -> Result<Vec<MarketplaceInfoDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let infos = plugin_manager::get_marketplace_info()?;
+        Ok::<_, anyhow::Error>(infos.into_iter().map(MarketplaceInfoDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+// ── Library Management ──
+
+#[derive(Debug, Serialize)]
+pub struct LibraryDto {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub library_type: String,
+    pub asset_types: String,
+    pub trusted: bool,
+    pub last_indexed_at: Option<i64>,
+    pub item_count: Option<i64>,
+    pub status: String,
+}
+
+impl From<crate::core::library_manager::LibraryRecord> for LibraryDto {
+    fn from(r: crate::core::library_manager::LibraryRecord) -> Self {
+        Self {
+            id: r.id,
+            name: r.name,
+            url: r.url,
+            library_type: r.library_type,
+            asset_types: r.asset_types,
+            trusted: r.trusted,
+            last_indexed_at: r.last_indexed_at,
+            item_count: r.item_count,
+            status: r.status,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct LibraryItemDto {
+    pub id: String,
+    pub library_id: String,
+    pub asset_type: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub subpath: Option<String>,
+    pub metadata_json: Option<String>,
+    pub indexed_at: i64,
+}
+
+impl From<crate::core::library_manager::LibraryItemRecord> for LibraryItemDto {
+    fn from(r: crate::core::library_manager::LibraryItemRecord) -> Self {
+        Self {
+            id: r.id,
+            library_id: r.library_id,
+            asset_type: r.asset_type,
+            name: r.name,
+            description: r.description,
+            subpath: r.subpath,
+            metadata_json: r.metadata_json,
+            indexed_at: r.indexed_at,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_libraries(store: State<'_, SkillStore>) -> Result<Vec<LibraryDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let libs = store.list_libraries()?;
+        Ok::<_, anyhow::Error>(libs.into_iter().map(LibraryDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn add_library(
+    store: State<'_, SkillStore>,
+    name: String,
+    url: String,
+    libraryType: String,
+) -> Result<LibraryDto, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let asset_types = match libraryType.as_str() {
+            "marketplace" => r#"["skill","plugin"]"#,
+            "github_repo" => r#"["skill"]"#,
+            "curated_list" => r#"["skill"]"#,
+            _ => r#"["skill"]"#,
+        };
+        let lib = store.add_library(&name, &url, &libraryType, asset_types, false)?;
+        Ok::<_, anyhow::Error>(LibraryDto::from(lib))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn delete_library(store: State<'_, SkillStore>, libraryId: String) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.delete_library(&libraryId)?;
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn get_library_items(
+    store: State<'_, SkillStore>,
+    libraryId: Option<String>,
+    assetType: Option<String>,
+) -> Result<Vec<LibraryItemDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let items = store.list_library_items(libraryId.as_deref(), assetType.as_deref())?;
+        Ok::<_, anyhow::Error>(items.into_iter().map(LibraryItemDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn search_library_items(
+    store: State<'_, SkillStore>,
+    query: String,
+    assetType: Option<String>,
+) -> Result<Vec<LibraryItemDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let items = store.search_library_items(&query, assetType.as_deref())?;
+        Ok::<_, anyhow::Error>(items.into_iter().map(LibraryItemDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn seed_libraries(store: State<'_, SkillStore>) -> Result<usize, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let count = store.seed_default_libraries()?;
+        Ok::<_, anyhow::Error>(count)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
 #[cfg(test)]
 #[path = "tests/commands.rs"]
 mod tests;

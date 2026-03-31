@@ -28,6 +28,7 @@ import type {
   ManagedSkill,
   OnboardingPlan,
   OnlineSkillDto,
+  PluginHealthDto,
   ScannedMcpServerDto,
   ToolOption,
   ToolStatusDto,
@@ -740,6 +741,49 @@ function App() {
       setLoadingStartAt(null)
     }
   }, [invokeTauri, isTauri, loadManagedSkills, t])
+
+  const handleImportPlugins = useCallback(async () => {
+    if (!isTauri) return
+    setLoading(true)
+    setLoadingStartAt(Date.now())
+    try {
+      const count = await invokeTauri<number>('import_plugins')
+      setSuccessToastMessage(t('pluginImportSuccess', { count }))
+      await loadManagedSkills()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+      setLoadingStartAt(null)
+    }
+  }, [invokeTauri, isTauri, loadManagedSkills, t])
+
+  const handleDiagnosePlugins = useCallback(async () => {
+    if (!isTauri) return
+    setLoading(true)
+    setLoadingStartAt(Date.now())
+    try {
+      const reports = await invokeTauri<PluginHealthDto[]>('diagnose_plugins')
+      const healthy = reports.filter((r) => r.healthy).length
+      const unhealthy = reports.length - healthy
+      if (unhealthy === 0) {
+        toast.success(`${t('pluginHealthy')} (${reports.length}/${reports.length})`)
+      } else {
+        const issueLines = reports
+          .filter((r) => !r.healthy)
+          .map((r) => `${r.name}: ${r.issues.join(', ')}`)
+          .join('\n')
+        toast.error(`${t('pluginUnhealthy')} (${unhealthy}/${reports.length})\n${issueLines}`, {
+          duration: 6000,
+        })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+      setLoadingStartAt(null)
+    }
+  }, [invokeTauri, isTauri, t])
 
   const handleCancelLoading = useCallback(() => {
     void invokeTauri('cancel_current_operation').catch(() => {})
@@ -1936,6 +1980,26 @@ function App() {
                   onClick={handleImportMcpServers}
                 >
                   {t('mcpImportServers')}
+                </button>
+              </div>
+            )}
+            {(assetTypeFilter === 'all' || assetTypeFilter === 'plugin') && (
+              <div className="mcp-action-bar">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  disabled={loading}
+                  onClick={handleImportPlugins}
+                >
+                  {t('pluginImport')}
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  disabled={loading}
+                  onClick={handleDiagnosePlugins}
+                >
+                  {t('pluginDiagnose')}
                 </button>
               </div>
             )}
