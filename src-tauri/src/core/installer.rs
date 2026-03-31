@@ -61,11 +61,14 @@ pub fn install_local_skill<R: tauri::Runtime>(
         id: Uuid::new_v4().to_string(),
         name,
         description,
+        asset_type: "skill".to_string(),
         source_type: "local".to_string(),
         source_ref: Some(source_path.to_string_lossy().to_string()),
         source_subpath: None,
         source_revision: None,
-        central_path: central_path.to_string_lossy().to_string(),
+        central_path: Some(central_path.to_string_lossy().to_string()),
+        config_json: None,
+        security_status: None,
         content_hash: content_hash.clone(),
         created_at: now,
         updated_at: now,
@@ -258,11 +261,14 @@ pub fn install_git_skill<R: tauri::Runtime>(
         id: Uuid::new_v4().to_string(),
         name,
         description,
+        asset_type: "skill".to_string(),
         source_type: "git".to_string(),
         source_ref: Some(repo_url.to_string()),
         source_subpath: parsed.subpath.clone(),
         source_revision: Some(revision),
-        central_path: central_path.to_string_lossy().to_string(),
+        central_path: Some(central_path.to_string_lossy().to_string()),
+        config_json: None,
+        security_status: None,
         content_hash: content_hash.clone(),
         created_at: now,
         updated_at: now,
@@ -601,7 +607,12 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
         .get_skill_by_id(skill_id)?
         .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
 
-    let central_path = PathBuf::from(record.central_path.clone());
+    let central_path = PathBuf::from(
+        record
+            .central_path
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("skill has no central_path"))?,
+    );
     if !central_path.exists() {
         anyhow::bail!("central path not found: {:?}", central_path);
     }
@@ -718,11 +729,14 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
         id: record.id.clone(),
         name: record.name.clone(),
         description,
+        asset_type: record.asset_type.clone(),
         source_type: record.source_type.clone(),
         source_ref: record.source_ref.clone(),
         source_subpath: record.source_subpath.clone(),
         source_revision: new_revision.clone().or(record.source_revision.clone()),
         central_path: record.central_path.clone(),
+        config_json: record.config_json.clone(),
+        security_status: record.security_status.clone(),
         content_hash: content_hash.clone(),
         created_at: record.created_at,
         updated_at: now,
@@ -743,16 +757,16 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
                 continue;
             }
         }
-        let force_copy = t.mode == "copy" || t.tool == "cursor";
+        let force_copy = t.sync_mode == "copy" || t.tool == "cursor";
         if force_copy {
             let target_path = PathBuf::from(&t.target_path);
             let sync_res = sync_dir_copy_with_overwrite(&central_path, &target_path, true)?;
             let record = super::skill_store::SkillTargetRecord {
                 id: t.id.clone(),
-                skill_id: t.skill_id.clone(),
+                asset_id: t.asset_id.clone(),
                 tool: t.tool.clone(),
                 target_path: sync_res.target_path.to_string_lossy().to_string(),
-                mode: "copy".to_string(),
+                sync_mode: "copy".to_string(),
                 status: "ok".to_string(),
                 last_error: None,
                 synced_at: Some(now),
@@ -1105,11 +1119,14 @@ pub fn install_git_skill_from_selection<R: tauri::Runtime>(
         id: Uuid::new_v4().to_string(),
         name: display_name,
         description,
+        asset_type: "skill".to_string(),
         source_type: "git".to_string(),
         source_ref: Some(repo_url.to_string()),
         source_subpath,
         source_revision: Some(revision),
-        central_path: central_path.to_string_lossy().to_string(),
+        central_path: Some(central_path.to_string_lossy().to_string()),
+        config_json: None,
+        security_status: None,
         content_hash: content_hash.clone(),
         created_at: now,
         updated_at: now,
@@ -1277,10 +1294,12 @@ pub fn backfill_skill_descriptions(store: &SkillStore) {
         Err(_) => return,
     };
     for skill in skills {
-        let central = std::path::Path::new(&skill.central_path);
-        let skill_md = central.join("SKILL.md");
-        if let Some((_, Some(desc))) = parse_skill_md(&skill_md) {
-            let _ = store.update_skill_description(&skill.id, Some(&desc));
+        if let Some(ref cp) = skill.central_path {
+            let central = std::path::Path::new(cp);
+            let skill_md = central.join("SKILL.md");
+            if let Some((_, Some(desc))) = parse_skill_md(&skill_md) {
+                let _ = store.update_skill_description(&skill.id, Some(&desc));
+            }
         }
     }
 }

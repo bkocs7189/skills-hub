@@ -138,10 +138,10 @@ fn installs_local_skill_and_updates_from_source() {
     let target = target_root.path().join("target");
     let t = SkillTargetRecord {
         id: "t1".to_string(),
-        skill_id: res.skill_id.clone(),
+        asset_id: res.skill_id.clone(),
         tool: "unknown_tool".to_string(),
         target_path: target.to_string_lossy().to_string(),
-        mode: "copy".to_string(),
+        sync_mode: "copy".to_string(),
         status: "ok".to_string(),
         last_error: None,
         synced_at: None,
@@ -158,6 +158,7 @@ fn installs_local_skill_and_updates_from_source() {
             .unwrap()
             .unwrap()
             .central_path
+            .unwrap()
     )
     .exists());
     assert!(

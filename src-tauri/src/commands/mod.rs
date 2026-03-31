@@ -314,7 +314,11 @@ pub async fn set_central_repo_path(
 
         if !skills.is_empty() {
             for skill in skills {
-                let old_path = std::path::PathBuf::from(&skill.central_path);
+                let cp = skill
+                    .central_path
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("skill {:?} has no central_path", skill.id))?;
+                let old_path = std::path::PathBuf::from(cp);
                 if !old_path.exists() {
                     anyhow::bail!("central path not found: {:?}", old_path);
                 }
@@ -336,7 +340,7 @@ pub async fn set_central_repo_path(
                 }
 
                 let mut updated = skill.clone();
-                updated.central_path = new_path.to_string_lossy().to_string();
+                updated.central_path = Some(new_path.to_string_lossy().to_string());
                 updated.updated_at = now_ms();
                 store.upsert_skill(&updated)?;
             }
@@ -542,10 +546,10 @@ pub async fn sync_skill_to_tool(
             }
             let record = SkillTargetRecord {
                 id: Uuid::new_v4().to_string(),
-                skill_id: skillId.clone(),
+                asset_id: skillId.clone(),
                 tool: a.id.as_key().to_string(),
                 target_path: result.target_path.to_string_lossy().to_string(),
-                mode: match result.mode_used {
+                sync_mode: match result.mode_used {
                     SyncMode::Auto => "auto",
                     SyncMode::Symlink => "symlink",
                     SyncMode::Junction => "junction",
@@ -784,9 +788,11 @@ pub async fn delete_managed_skill(
 
         let record = store.get_skill_by_id(&skillId)?;
         if let Some(skill) = record {
-            let path = std::path::PathBuf::from(skill.central_path);
-            if path.exists() {
-                std::fs::remove_dir_all(&path)?;
+            if let Some(ref cp) = skill.central_path {
+                let path = std::path::PathBuf::from(cp);
+                if path.exists() {
+                    std::fs::remove_dir_all(&path)?;
+                }
             }
             store.delete_skill(&skillId)?;
         }
@@ -856,7 +862,7 @@ fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, S
                 .into_iter()
                 .map(|target| SkillTargetDto {
                     tool: target.tool,
-                    mode: target.mode,
+                    mode: target.sync_mode,
                     status: target.status,
                     target_path: target.target_path,
                     synced_at: target.synced_at,
@@ -869,7 +875,7 @@ fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, S
                 description: skill.description,
                 source_type: skill.source_type,
                 source_ref: skill.source_ref,
-                central_path: skill.central_path,
+                central_path: skill.central_path.unwrap_or_default(),
                 created_at: skill.created_at,
                 updated_at: skill.updated_at,
                 last_sync_at: skill.last_sync_at,
